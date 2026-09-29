@@ -7,8 +7,8 @@ use std::{
 };
 
 use paraseq::{
-    Record, fastx,
-    prelude::{IntoProcessError, PairedParallelProcessor, ParallelProcessor, ParallelReader},
+    ReaderBuilder, Record, fastx,
+    prelude::{IntoParaseqError, PairedParallelProcessor, ParallelProcessor, ParallelReader},
 };
 use parking_lot::Mutex;
 
@@ -121,8 +121,9 @@ impl FastxEncoderBuilder {
         let (r1, r2) = match self.input {
             Some(FastxInput::Single(path)) => {
                 // build interleaved reader
-                let mut reader =
-                    fastx::Reader::from_path(path).map_err(IntoBinseqError::into_binseq_error)?;
+                let mut reader = ReaderBuilder::path(path)
+                    .build()
+                    .map_err(IntoBinseqError::into_binseq_error)?;
                 // Only probe for an extended length when the writer is configured
                 // as paired (i.e. the single input is interleaved); otherwise a
                 // second read's length would mark fixed-length formats as paired.
@@ -131,8 +132,9 @@ impl FastxEncoderBuilder {
                 (reader, None)
             }
             Some(FastxInput::Stdin) => {
-                let mut reader =
-                    fastx::Reader::from_stdin().map_err(IntoBinseqError::into_binseq_error)?;
+                let mut reader = ReaderBuilder::stdin()
+                    .build()
+                    .map_err(IntoBinseqError::into_binseq_error)?;
                 // Only probe for an extended length when the writer is configured
                 // as paired (i.e. the single input is interleaved); otherwise a
                 // second read's length would mark fixed-length formats as paired.
@@ -142,10 +144,12 @@ impl FastxEncoderBuilder {
             }
             Some(FastxInput::Paired(path1, path2)) => {
                 // build interleaved reader
-                let mut reader1 =
-                    fastx::Reader::from_path(path1).map_err(IntoBinseqError::into_binseq_error)?;
-                let mut reader2 =
-                    fastx::Reader::from_path(path2).map_err(IntoBinseqError::into_binseq_error)?;
+                let mut reader1 = ReaderBuilder::path(path1)
+                    .build()
+                    .map_err(IntoBinseqError::into_binseq_error)?;
+                let mut reader2 = ReaderBuilder::path(path2)
+                    .build()
+                    .map_err(IntoBinseqError::into_binseq_error)?;
                 let (slen, _) = detect_seq_len(&mut reader1, false)?;
                 let (xlen, _) = detect_seq_len(&mut reader2, false)?;
                 self.builder = self.builder.slen(slen as u32).xlen(xlen as u32);
@@ -233,7 +237,7 @@ impl Encoder {
         } else {
             writer.ingest_completed(&mut self.thread_writer)
         }
-        .map_err(IntoProcessError::into_process_error)
+        .map_err(IntoParaseqError::into_paraseq_error)
     }
 }
 
@@ -245,10 +249,10 @@ impl<Rf: Record> ParallelProcessor<Rf> for Encoder {
             .s_seq(&seq)
             .opt_s_qual(record.qual())
             .build()
-            .map_err(IntoProcessError::into_process_error)?;
+            .map_err(IntoParaseqError::into_paraseq_error)?;
         self.thread_writer
             .push(seq_record)
-            .map_err(IntoProcessError::into_process_error)?;
+            .map_err(IntoParaseqError::into_paraseq_error)?;
         Ok(())
     }
 
@@ -260,7 +264,7 @@ impl<Rf: Record> ParallelProcessor<Rf> for Encoder {
         self.writer
             .lock()
             .ingest(&mut self.thread_writer)
-            .map_err(IntoProcessError::into_process_error)?;
+            .map_err(IntoParaseqError::into_paraseq_error)?;
         Ok(())
     }
 
@@ -281,11 +285,11 @@ impl<Rf: Record> PairedParallelProcessor<Rf> for Encoder {
             .x_seq(&xseq)
             .opt_x_qual(record2.qual())
             .build()
-            .map_err(IntoProcessError::into_process_error)?;
+            .map_err(IntoParaseqError::into_paraseq_error)?;
 
         self.thread_writer
             .push(seq_record)
-            .map_err(IntoProcessError::into_process_error)?;
+            .map_err(IntoParaseqError::into_paraseq_error)?;
         Ok(())
     }
 
@@ -297,7 +301,7 @@ impl<Rf: Record> PairedParallelProcessor<Rf> for Encoder {
         self.writer
             .lock()
             .ingest(&mut self.thread_writer)
-            .map_err(IntoProcessError::into_process_error)?;
+            .map_err(IntoParaseqError::into_paraseq_error)?;
         Ok(())
     }
 
