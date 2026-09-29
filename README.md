@@ -1,7 +1,7 @@
 # BINSEQ
 
 [![MIT licensed](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE.md)
-![actions status](https://github.com/arcinstitute/binseq/workflows/CI/badge.svg)
+![actions status](https://github.com/noamteyssier/binseq/workflows/CI/badge.svg)
 [![Crates.io](https://img.shields.io/crates/d/binseq?color=orange&label=crates.io)](https://crates.io/crates/binseq)
 [![docs.rs](https://img.shields.io/docsrs/binseq?color=green&label=docs.rs)](https://docs.rs/binseq/latest/binseq/)
 
@@ -23,9 +23,9 @@ All variants support both single and paired sequences.
 
 ## Getting Started
 
-This is a **library** for reading and writing BINSEQ files; for a **command-line interface** see [bqtools](https://github.com/arcinstitute/bqtools).
+This is a **library** for reading and writing BINSEQ files; for a **command-line interface** see [bqtools](https://github.com/noamteyssier/bqtools).
 
 To get started please refer to our [documentation](https://docs.rs/binseq/latest/binseq/).
-For example programs which make use of the library check out our [examples directory](https://github.com/arcinstitute/binseq/tree/main/examples).
+For example programs which make use of the library check out our [examples directory](https://github.com/noamteyssier/binseq/tree/main/examples).
 
 For more information about the BINSEQ file family, please refer to our [preprint](https://www.biorxiv.org/content/10.1101/2025.04.08.647863v2).
