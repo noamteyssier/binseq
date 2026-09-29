@@ -45,6 +45,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `anyhow` is now actually an optional dependency (still enabled by default; opt out with `default-features = false`):
   - the CBQ Elias-Fano codec is handled directly without the auto-derive from thiserror
   - fixes the optional feature which actually never compiled when disabled.
+- `paraseq` updated `0.5` -> `0.6` (breaking for users of the `paraseq` feature and `encode_fastx`).
+- Dependencies updated: `bitnuc` `0.5.7`, `rand` `0.10`, `sucds` `0.9`, `zstd` `0.14`, and `thiserror` `2.0.21`.
 - Internal simplification:
   - one shared `bq`/`vbq` encoder
   - `BatchRecord` wraps `RefRecord`
