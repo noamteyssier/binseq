@@ -8,7 +8,7 @@ use zstd::zstd_safe;
 
 use crate::cbq::core::utils::sized_compress;
 use crate::error::{CbqError, WriteError};
-use crate::{BinseqRecord, BitSize, DEFAULT_QUALITY_SCORE, Result};
+use crate::{BinseqRecord, BitSize, DEFAULT_QUALITY_SCORE, IntoBinseqError, Result};
 
 use super::utils::{calculate_offsets, extension_read, resize_uninit, slice_and_increment, span};
 use super::{BlockHeader, BlockRange, FileHeader};
@@ -358,13 +358,11 @@ impl ColumnarBlock {
             self.ef = None;
             Ok(())
         } else {
-            #[allow(clippy::redundant_closure_for_method_calls)]
-            let mut ef_builder = EliasFanoBuilder::new(self.seq.len(), self.npos.len())
-                .map_err(|e| e.into_boxed_dyn_error())?;
-            #[allow(clippy::redundant_closure_for_method_calls)]
+            let mut ef_builder = EliasFanoBuilder::new(self.seq.len() as u64, self.npos.len())
+                .map_err(IntoBinseqError::into_binseq_error)?;
             ef_builder
-                .extend(self.npos.iter().map(|idx| *idx as usize))
-                .map_err(|e| e.into_boxed_dyn_error())?;
+                .extend(self.npos.iter().copied())
+                .map_err(IntoBinseqError::into_binseq_error)?;
             let ef = ef_builder.build();
 
             self.ef = Some(ef);
@@ -376,7 +374,7 @@ impl ColumnarBlock {
     fn backfill_npos(&mut self) {
         if let Some(ef) = self.ef.as_ref() {
             ef.iter(0).for_each(|idx| {
-                if let Some(base) = self.seq.get_mut(idx) {
+                if let Some(base) = self.seq.get_mut(idx as usize) {
                     *base = b'N';
                 }
             });
@@ -395,9 +393,8 @@ impl ColumnarBlock {
 
         // compress N-positions (Elias-Fano encoded)
         if let Some(ef) = self.ef.as_ref() {
-            #[allow(clippy::redundant_closure_for_method_calls)]
             ef.serialize_into(&mut self.ef_bytes)
-                .map_err(|e| e.into_boxed_dyn_error())?;
+                .map_err(IntoBinseqError::into_binseq_error)?;
             self.len_nef = self.ef_bytes.len();
             sized_compress(&mut self.z_npos, &self.ef_bytes, cctx)?;
         }
@@ -450,7 +447,7 @@ impl ColumnarBlock {
 
             #[allow(clippy::redundant_closure_for_method_calls)]
             let ef = EliasFano::deserialize_from(self.ef_bytes.as_slice())
-                .map_err(|e| e.into_boxed_dyn_error())?;
+                .map_err(IntoBinseqError::into_binseq_error)?;
             self.ef = Some(ef);
         }
 
@@ -619,7 +616,7 @@ impl ColumnarBlock {
             // reinitialize the EliasFano encoding
             #[allow(clippy::redundant_closure_for_method_calls)]
             let ef = EliasFano::deserialize_from(self.ef_bytes.as_slice())
-                .map_err(|e| e.into_boxed_dyn_error())?;
+                .map_err(IntoBinseqError::into_binseq_error)?;
             self.ef = Some(ef);
         }
 

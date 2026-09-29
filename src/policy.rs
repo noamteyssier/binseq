@@ -1,6 +1,6 @@
 //! Policies for handling invalid nucleotides during BQ/VBQ encoding.
 
-use rand::Rng;
+use rand::{Rng, RngExt};
 
 use crate::error::{Result, WriteError};
 
