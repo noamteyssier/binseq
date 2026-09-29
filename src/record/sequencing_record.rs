@@ -1,9 +1,6 @@
 use crate::{BitSize, Result, error::WriteError};
 
-/// A zero-copy record used to write sequences to binary sequence files.
-///
-/// This struct provides a unified API for writing records to all binseq formats
-/// (BQ, VBQ, and CBQ). It uses borrowed references for zero-copy efficiency.
+/// A zero-copy (borrowed) record used to write sequences to any BINSEQ format.
 ///
 /// # Example
 ///
@@ -20,13 +17,13 @@ use crate::{BitSize, Result, error::WriteError};
 /// ```
 #[derive(Clone, Copy, Default)]
 pub struct SequencingRecord<'a> {
-    pub(crate) s_seq: &'a [u8],
-    pub(crate) s_qual: Option<&'a [u8]>,
-    pub(crate) s_header: Option<&'a [u8]>,
-    pub(crate) x_seq: Option<&'a [u8]>,
-    pub(crate) x_qual: Option<&'a [u8]>,
-    pub(crate) x_header: Option<&'a [u8]>,
-    pub(crate) flag: Option<u64>,
+    pub s_seq: &'a [u8],
+    pub s_qual: Option<&'a [u8]>,
+    pub s_header: Option<&'a [u8]>,
+    pub x_seq: Option<&'a [u8]>,
+    pub x_qual: Option<&'a [u8]>,
+    pub x_header: Option<&'a [u8]>,
+    pub flag: Option<u64>,
 }
 
 impl<'a> SequencingRecord<'a> {
@@ -52,60 +49,9 @@ impl<'a> SequencingRecord<'a> {
         }
     }
 
-    /// Returns the primary sequence
-    #[inline]
-    #[must_use]
-    pub fn s_seq(&self) -> &'a [u8] {
-        self.s_seq
-    }
-
-    /// Returns the primary quality scores if present
-    #[inline]
-    #[must_use]
-    pub fn s_qual(&self) -> Option<&'a [u8]> {
-        self.s_qual
-    }
-
-    /// Returns the primary header if present
-    #[inline]
-    #[must_use]
-    pub fn s_header(&self) -> Option<&'a [u8]> {
-        self.s_header
-    }
-
-    /// Returns the extended/paired sequence if present
-    #[inline]
-    #[must_use]
-    pub fn x_seq(&self) -> Option<&'a [u8]> {
-        self.x_seq
-    }
-
-    /// Returns the extended quality scores if present
-    #[inline]
-    #[must_use]
-    pub fn x_qual(&self) -> Option<&'a [u8]> {
-        self.x_qual
-    }
-
-    /// Returns the extended header if present
-    #[inline]
-    #[must_use]
-    pub fn x_header(&self) -> Option<&'a [u8]> {
-        self.x_header
-    }
-
-    /// Returns the flag if present
-    #[inline]
-    #[must_use]
-    pub fn flag(&self) -> Option<u64> {
-        self.flag
-    }
-
-    /// Returns the configured size of this record for CBQ format.
+    /// Returns the encoded size of this record for CBQ, given the writer configuration.
     ///
-    /// CBQ uses columnar storage so there are no per-record length prefixes.
-    /// This calculates the size based on writer configuration, ignoring any
-    /// extra data in the record that the writer won't use.
+    /// Extra data the writer won't use is not counted.
     #[inline]
     #[must_use]
     pub fn configured_size_cbq(
@@ -154,22 +100,11 @@ impl<'a> SequencingRecord<'a> {
         size
     }
 
-    /// Returns the configured size of this record for VBQ format.
+    /// Returns the encoded size of this record for VBQ (row-based, length-prefixed),
+    /// given the writer configuration.
     ///
-    /// VBQ uses a row-based format with length prefixes for each field.
-    /// This calculates the size based on writer configuration, ignoring any
-    /// extra data in the record that the writer won't use.
-    ///
-    /// The VBQ record layout is:
-    /// - Flag (8 bytes, if `has_flags`)
-    /// - `s_len` (8 bytes)
-    /// - `x_len` (8 bytes)
-    /// - `s_seq` (encoded, rounded up to 8-byte words)
-    /// - `s_qual` (raw bytes, if `has_qualities`)
-    /// - `s_header_len` + `s_header` (8 + len bytes, if `has_headers` and `s_header` present)
-    /// - `x_seq` (encoded, rounded up to 8-byte words, if paired)
-    /// - `x_qual` (raw bytes, if `has_qualities` and paired)
-    /// - `x_header_len` + `x_header` (8 + len bytes, if `has_headers` and `x_header` present)
+    /// Extra data the writer won't use is not counted.
+    /// See [`vbq`](crate::vbq) for the record layout.
     #[inline]
     #[must_use]
     pub fn configured_size_vbq(
@@ -255,7 +190,7 @@ impl<'a> SequencingRecord<'a> {
     }
 }
 
-/// A convenience builder struct for creating a [`SequencingRecord`]
+/// Builder for a [`SequencingRecord`]
 ///
 /// # Example
 ///
@@ -381,11 +316,7 @@ impl<'a> SequencingRecordBuilder<'a> {
         self
     }
 
-    /// Builds the `SequencingRecord`
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the primary sequence (`s_seq`) is not set.
+    /// Builds the `SequencingRecord`; errors if `s_seq` is not set
     pub fn build(self) -> Result<SequencingRecord<'a>> {
         let Some(s_seq) = self.s_seq else {
             return Err(WriteError::MissingSequence.into());
@@ -419,25 +350,25 @@ mod tests {
             Some(b"x_hdr"),
             Some(7),
         );
-        assert_eq!(record.s_seq(), b"ACGT");
-        assert_eq!(record.s_qual(), Some(b"IIII".as_slice()));
-        assert_eq!(record.s_header(), Some(b"s_hdr".as_slice()));
-        assert_eq!(record.x_seq(), Some(b"TGCA".as_slice()));
-        assert_eq!(record.x_qual(), Some(b"FFFF".as_slice()));
-        assert_eq!(record.x_header(), Some(b"x_hdr".as_slice()));
-        assert_eq!(record.flag(), Some(7));
+        assert_eq!(record.s_seq, b"ACGT");
+        assert_eq!(record.s_qual, Some(b"IIII".as_slice()));
+        assert_eq!(record.s_header, Some(b"s_hdr".as_slice()));
+        assert_eq!(record.x_seq, Some(b"TGCA".as_slice()));
+        assert_eq!(record.x_qual, Some(b"FFFF".as_slice()));
+        assert_eq!(record.x_header, Some(b"x_hdr".as_slice()));
+        assert_eq!(record.flag, Some(7));
     }
 
     #[test]
     fn test_new_constructor_minimal() {
         let record = SequencingRecord::new(b"ACGT", None, None, None, None, None, None);
-        assert_eq!(record.s_seq(), b"ACGT");
-        assert_eq!(record.s_qual(), None);
-        assert_eq!(record.s_header(), None);
-        assert_eq!(record.x_seq(), None);
-        assert_eq!(record.x_qual(), None);
-        assert_eq!(record.x_header(), None);
-        assert_eq!(record.flag(), None);
+        assert_eq!(record.s_seq, b"ACGT");
+        assert_eq!(record.s_qual, None);
+        assert_eq!(record.s_header, None);
+        assert_eq!(record.x_seq, None);
+        assert_eq!(record.x_qual, None);
+        assert_eq!(record.x_header, None);
+        assert_eq!(record.flag, None);
         assert!(!record.is_paired());
         assert!(!record.has_flags());
         assert!(!record.has_headers());
@@ -447,35 +378,24 @@ mod tests {
     // ==================== SequencingRecordBuilder opt_* setters ====================
 
     #[test]
-    fn test_builder_opt_setters_some() {
+    fn test_builder_opt_setters() {
         let record = SequencingRecordBuilder::default()
             .s_seq(b"ACGT")
+            .opt_s_qual(Some(b"FFFF"))
             .opt_s_header(Some(b"s_hdr"))
             .opt_x_seq(Some(b"TGCA"))
-            .opt_x_qual(Some(b"FFFF"))
-            .opt_flag(Some(9))
-            .build()
-            .unwrap();
-        assert_eq!(record.s_header(), Some(b"s_hdr".as_slice()));
-        assert_eq!(record.x_seq(), Some(b"TGCA".as_slice()));
-        assert_eq!(record.x_qual(), Some(b"FFFF".as_slice()));
-        assert_eq!(record.flag(), Some(9));
-    }
-
-    #[test]
-    fn test_builder_opt_setters_none() {
-        let record = SequencingRecordBuilder::default()
-            .s_seq(b"ACGT")
-            .opt_s_header(None)
-            .opt_x_seq(None)
             .opt_x_qual(None)
-            .opt_flag(None)
+            .opt_x_header(None)
+            .opt_flag(Some(42))
             .build()
             .unwrap();
-        assert_eq!(record.s_header(), None);
-        assert_eq!(record.x_seq(), None);
-        assert_eq!(record.x_qual(), None);
-        assert_eq!(record.flag(), None);
+        // field access and getters are equivalent
+        assert_eq!(record.s_qual, Some(b"FFFF".as_slice()));
+        assert_eq!(record.s_header, Some(b"s_hdr".as_slice()));
+        assert_eq!(record.x_seq, Some(b"TGCA".as_slice()));
+        assert_eq!(record.x_qual, None);
+        assert_eq!(record.x_header, None);
+        assert_eq!(record.flag, Some(42));
     }
 
     #[test]

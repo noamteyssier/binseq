@@ -88,32 +88,15 @@ impl BinseqReader {
 
     /// Process records in parallel within a specified range
     ///
-    /// This method allows parallel processing of a subset of records within the file,
-    /// defined by a start and end index. The range is distributed across the specified
-    /// number of threads.
-    ///
-    /// # Arguments
-    ///
-    /// * `processor` - The processor to use for each record
-    /// * `num_threads` - The number of threads to spawn
-    /// * `start` - The starting record index (inclusive)
-    /// * `end` - The ending record index (exclusive)
-    ///
-    /// # Returns
-    ///
-    /// * `Ok(())` - If all records were processed successfully
-    /// * `Err(Error)` - If an error occurred during processing
+    /// Inherent convenience for [`ParallelReader::process_parallel_range`], callable
+    /// without importing the trait.
     pub fn process_parallel_range<P: ParallelProcessor + Clone + 'static>(
         self,
         processor: P,
         num_threads: usize,
         range: Range<usize>,
     ) -> Result<()> {
-        match self {
-            Self::Bq(reader) => reader.process_parallel_range(processor, num_threads, range),
-            Self::Vbq(reader) => reader.process_parallel_range(processor, num_threads, range),
-            Self::Cbq(reader) => reader.process_parallel_range(processor, num_threads, range),
-        }
+        <Self as ParallelReader>::process_parallel_range(self, processor, num_threads, range)
     }
 }
 impl ParallelReader for BinseqReader {
@@ -140,6 +123,18 @@ impl ParallelReader for BinseqReader {
     }
 }
 
+/// Clamp a requested thread count to the available parallelism.
+///
+/// A request of 0 means "use all available cores".
+pub(crate) fn clamp_threads(num_threads: usize) -> usize {
+    let available = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
+    if num_threads == 0 {
+        available
+    } else {
+        num_threads.min(available)
+    }
+}
+
 /// Trait for BINSEQ readers that can process records in parallel
 ///
 /// This is implemented by the **reader** not by the **processor**.
@@ -151,22 +146,7 @@ pub trait ParallelReader {
         num_threads: usize,
     ) -> Result<()>;
 
-    /// Process records in parallel within a specified range
-    ///
-    /// This method allows parallel processing of a subset of records within the file,
-    /// defined by a start and end index. The range is distributed across the specified
-    /// number of threads.
-    ///
-    /// # Arguments
-    ///
-    /// * `processor` - The processor to use for each record
-    /// * `num_threads` - The number of threads to spawn
-    /// * `range` - The range of record indices to process
-    ///
-    /// # Returns
-    ///
-    /// * `Ok(())` - If all records were processed successfully
-    /// * `Err(Error)` - If an error occurred during processing
+    /// Process a range of record indices in parallel, distributed across `num_threads`
     fn process_parallel_range<P: ParallelProcessor + Clone + 'static>(
         self,
         processor: P,
@@ -174,21 +154,7 @@ pub trait ParallelReader {
         range: Range<usize>,
     ) -> Result<()>;
 
-    /// Validate the specified range for the file.
-    ///
-    /// This method checks if the provided range is valid for the file, ensuring that
-    /// the start index is less than the end index and both indices are within the
-    /// bounds of the file.
-    ///
-    /// # Arguments
-    ///
-    /// * `total_records` - The total number of records in the file
-    /// * `range` - The range of record indices to validate
-    ///
-    /// # Returns
-    ///
-    /// * `Ok(())` - If the range is valid
-    /// * `Err(Error)` - If the range is invalid
+    /// Validate that a record range is well-formed and within the file's bounds
     fn validate_range(&self, total_records: usize, range: &Range<usize>) -> Result<()> {
         if range.start >= total_records {
             Err(ReadError::OutOfRange {
@@ -224,14 +190,12 @@ pub trait ParallelProcessor: Send + Clone {
 
     /// Called when a thread finishes processing its batch
     /// Default implementation does nothing
-    #[allow(unused_variables)]
     fn on_batch_complete(&mut self) -> Result<()> {
         Ok(())
     }
 
     /// Called when a thread finished processing all its batches
     /// Default implementation does nothing
-    #[allow(unused_variables)]
     fn on_thread_complete(&mut self) -> Result<()> {
         Ok(())
     }
@@ -239,7 +203,6 @@ pub trait ParallelProcessor: Send + Clone {
     /// Set the thread ID for this processor
     ///
     /// Each thread should call this method with its own unique ID.
-    #[allow(unused_variables)]
     fn set_tid(&mut self, _tid: usize) {
         // Default implementation does nothing
     }

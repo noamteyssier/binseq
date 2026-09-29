@@ -62,9 +62,7 @@ impl<W: io::Write> ColumnarBlockWriter<W> {
         Ok(writer)
     }
 
-    /// Sets the compression level for Writer
-    ///
-    /// Note: only used on init, shouldn't be set by the user
+    /// Initializes the zstd context (compression level + long-distance matching).
     fn init_compressor(&mut self) -> Result<()> {
         // Initialize the compressor with the compression level
         self.cctx
@@ -84,15 +82,9 @@ impl<W: io::Write> ColumnarBlockWriter<W> {
         self.block.header
     }
 
-    /// Calculate the usage of the block as a percentage
-    pub fn usage(&self) -> f64 {
-        self.block.usage()
-    }
-
-    /// Push a record to the writer
+    /// Push a record to the writer.
     ///
-    /// Returns `Ok(true)` if the record was written successfully.
-    /// CBQ handles N's explicitly in its encoding, so records are never skipped.
+    /// Always returns `Ok(true)` on success: CBQ encodes N's explicitly, so records are never skipped.
     pub fn push(&mut self, record: SequencingRecord) -> Result<bool> {
         if !self.block.can_fit(&record) {
             self.flush()?;
@@ -132,10 +124,8 @@ impl<W: io::Write> ColumnarBlockWriter<W> {
     /// Ingest only the *completed* (already-compressed) blocks from `other`.
     ///
     /// Unlike [`ingest`](Self::ingest), this never touches either writer's
-    /// incomplete block, so it performs no zstd compression. The work done
-    /// under a global lock is reduced to a `write_all` of pre-compressed bytes
-    /// plus a header copy — compression has already been paid for on the worker
-    /// thread when `other`'s blocks were flushed in `push`.
+    /// incomplete block and performs no zstd compression — under a global lock
+    /// it only writes pre-compressed bytes and copies headers.
     ///
     /// `other` keeps building its incomplete block across calls; only its
     /// completed-block buffer and headers are drained.
@@ -157,12 +147,9 @@ impl<W: io::Write> ColumnarBlockWriter<W> {
         Ok(())
     }
 
-    /// Ingests only the *incomplete* (non-compressed) blocks from the `other`.
+    /// Ingests the *incomplete* (uncompressed) block from `other`.
     ///
-    /// This should not be used in isolation and should be handled from the [`ingest`](Self::ingest) API only
-    /// to avoid any mistakes.
-    ///
-    /// [`ingest_completed`](Self::ingest_completed) should always be called first.
+    /// Only called via [`ingest`](Self::ingest), after [`ingest_completed`](Self::ingest_completed).
     fn ingest_incompleted(&mut self, other: &mut ColumnarBlockWriter<Vec<u8>>) -> Result<()> {
         if other.block.num_records == 0 {
             return Ok(()); // short-circuit
@@ -189,19 +176,14 @@ impl<W: io::Write> ColumnarBlockWriter<W> {
     }
 }
 
-/// Specialized implementation when using a local `Vec<u8>` as the inner data structure
+/// Methods specific to `Vec<u8>`-backed writers.
 impl ColumnarBlockWriter<Vec<u8>> {
     #[must_use]
     pub fn inner_data(&self) -> &[u8] {
         &self.inner
     }
 
-    /// Clears only the completed-block state (compressed bytes + headers),
-    /// leaving the incomplete block intact.
-    ///
-    /// Used by [`ingest_completed`](ColumnarBlockWriter::ingest_completed) so a
-    /// worker thread can keep accumulating records into its in-progress block
-    /// across batches.
+    /// Clears the completed-block state (compressed bytes + headers), leaving the incomplete block intact.
     pub fn clear_completed_data(&mut self) {
         self.inner.clear();
         self.headers.clear();
@@ -210,12 +192,6 @@ impl ColumnarBlockWriter<Vec<u8>> {
     /// Clears the incomplete-block state
     pub fn clear_incomplete_data(&mut self) {
         self.block.clear();
-    }
-
-    /// Returns the number of bytes written to the inner data structure
-    #[must_use]
-    pub fn bytes_written(&self) -> usize {
-        self.inner.len()
     }
 }
 
