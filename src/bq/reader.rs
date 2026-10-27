@@ -711,11 +711,7 @@ impl ParallelReader for MmapReader {
                 handles.push(handle);
             }
 
-            for handle in handles {
-                handle.join().unwrap()?;
-            }
-
-            Ok(())
+            handles.into_iter().try_for_each(|h| h.join().unwrap())
         })
     }
 }

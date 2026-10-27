@@ -777,8 +777,7 @@ impl MmapReader {
 impl ParallelReader for MmapReader {
     /// Processes all records in parallel by distributing blocks across threads.
     ///
-    /// The processor is cloned per thread; share state via thread-safe
-    /// containers like `Arc`.
+    /// The processor is cloned per thread and may borrow from the caller's scope.
     fn process_parallel<P: ParallelProcessor>(
         self,
         processor: P,
@@ -910,11 +909,7 @@ impl ParallelReader for MmapReader {
             }
 
             // Wait for all threads to complete
-            for handle in handles {
-                handle.join().unwrap()?;
-            }
-
-            Ok(())
+            handles.into_iter().try_for_each(|h| h.join().unwrap())
         })
     }
 }

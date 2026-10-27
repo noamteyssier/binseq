@@ -254,17 +254,16 @@ impl ParallelReader for MmapReader {
             return Ok(()); // nothing to do
         }
 
+        let range = &range;
         thread::scope(|s| -> crate::Result<()> {
             // Distribute blocks evenly across threads
             let mut handles = Vec::new();
             for t_block_ranges in relevant_blocks.chunks(num_blocks.div_ceil(num_threads)) {
-                let t_block_ranges = t_block_ranges.to_vec();
-                let range = range.clone();
                 let mut t_reader = self.clone();
                 let mut t_proc = processor.clone();
 
                 let thread_handle = s.spawn(move || -> crate::Result<()> {
-                    for b_range in t_block_ranges {
+                    for &b_range in t_block_ranges {
                         t_reader.load_block(b_range)?;
                         for record in t_reader.block.iter_records(b_range) {
                             let global_record_idx = record.index() as usize;
@@ -282,10 +281,7 @@ impl ParallelReader for MmapReader {
                 handles.push(thread_handle);
             }
 
-            for handle in handles {
-                handle.join().unwrap()?;
-            }
-            Ok(())
+            handles.into_iter().try_for_each(|h| h.join().unwrap())
         })
     }
 }

@@ -213,6 +213,7 @@ pub trait ParallelProcessor: Send + Clone {
 #[cfg(test)]
 mod testing {
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     use parking_lot::Mutex;
 
@@ -273,12 +274,11 @@ mod testing {
     /// A processor that borrows stack state, so it is not `'static`.
     #[derive(Clone)]
     struct BorrowingProcessor<'a> {
-        n_records: &'a std::sync::atomic::AtomicUsize,
+        n_records: &'a AtomicUsize,
     }
     impl ParallelProcessor for BorrowingProcessor<'_> {
         fn process_record<R: BinseqRecord>(&mut self, _record: R) -> Result<()> {
-            self.n_records
-                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            self.n_records.fetch_add(1, Ordering::Relaxed);
             Ok(())
         }
     }
@@ -288,7 +288,7 @@ mod testing {
         for ext in ["bq", "vbq", "cbq"] {
             let reader = BinseqReader::new(format!("./data/subset.{ext}")).unwrap();
             let num_records = reader.num_records().unwrap();
-            let n_records = std::sync::atomic::AtomicUsize::new(0);
+            let n_records = AtomicUsize::new(0);
             let processor = BorrowingProcessor {
                 n_records: &n_records,
             };
