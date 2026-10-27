@@ -21,6 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`Error::BitnucError` / `Error::BitnucEncodingError` merged into one boxed `Error::BitnucError(Box<dyn Error + Send + Sync>)`**
   - `bitnuc` upgrades are no longer breaking changes to `binseq::Error`;
   - `?` conversion from both `bitnuc` error types still works.
+- **`cbq::FileHeaderBuilder` matches the BQ/VBQ builder style**
+  - takes `self` by value and has `new()`;
+  - `is_paired` / `with_flags` / `with_headers` / `with_qualities` / `with_block_size` / `with_compression_level` -> `paired` / `flags` / `headers` / `qualities` / `block_size` / `compression_level`;
+  - `with_optional_block_size` / `with_optional_compression_level` removed.
+- **Compression level is `i32` throughout** (`cbq::FileHeader::compression_level`, `cbq::DEFAULT_COMPRESSION_LEVEL`, and `cbq::FileHeaderBuilder::compression_level`)
+  - the on-disk header is byte-identical: the `i32` sits in the low bytes of the former `u64` field.
 - VBQ and CBQ parallel readers borrow the mmap and block ranges instead of cloning them per thread.
 
 ### Removed
@@ -31,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `BinseqWriterBuilder::compression_level` with a negative (zstd fast mode) level was silently replaced by `0` for CBQ; it is now honored.
 - CBQ readers now reject files and blocks written by a newer format version (`CbqError::UnsupportedFileVersion` / `UnsupportedBlockVersion`) instead of silently misparsing them.
 - The BQ parallel reader panicked when a processor returned an error; it now returns the `Err` like the VBQ and CBQ readers.
 

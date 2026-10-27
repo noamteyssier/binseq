@@ -101,4 +101,4 @@ pub const BLOCK_VERSION: u8 = 1;
 pub const DEFAULT_BLOCK_SIZE: u64 = 1024 * 1024;
 
 /// The default compression level.
-pub const DEFAULT_COMPRESSION_LEVEL: u64 = 0;
+pub const DEFAULT_COMPRESSION_LEVEL: i32 = 0;

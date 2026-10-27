@@ -35,8 +35,10 @@ pub struct FileHeader {
     pub presence_flags: u64,
 
     // Configuration (16 bytes)
-    /// compression level
-    pub compression_level: u64,
+    /// zstd compression level (negative values select zstd's fast modes)
+    pub compression_level: i32,
+    /// Upper half of the original `u64` compression level field (always zero)
+    compression_level_pad: [u8; 4],
     /// block size in bytes
     pub block_size: u64,
 
@@ -50,6 +52,7 @@ impl Default for FileHeader {
             version: FILE_VERSION,
             presence_flags: 0,
             compression_level: DEFAULT_COMPRESSION_LEVEL,
+            compression_level_pad: [0; 4],
             block_size: DEFAULT_BLOCK_SIZE,
             reserved: [0; 32],
         };
@@ -135,97 +138,75 @@ impl FileHeader {
 }
 
 /// Builder for a [`FileHeader`](crate::cbq::FileHeader).
-#[derive(Default)]
+///
+/// Defaults: unpaired, headers and qualities on, flags off,
+/// [`DEFAULT_BLOCK_SIZE`](crate::cbq::DEFAULT_BLOCK_SIZE), and
+/// [`DEFAULT_COMPRESSION_LEVEL`](crate::cbq::DEFAULT_COMPRESSION_LEVEL).
+#[derive(Clone, Copy, Debug)]
 pub struct FileHeaderBuilder {
-    compression_level: Option<usize>,
-    block_size: Option<usize>,
-    is_paired: Option<bool>,
-    with_headers: Option<bool>,
-    with_flags: Option<bool>,
-    with_qualities: Option<bool>,
+    header: FileHeader,
+}
+
+impl Default for FileHeaderBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl FileHeaderBuilder {
-    pub fn with_optional_compression_level(
-        &mut self,
-        compression_level: Option<usize>,
-    ) -> &mut Self {
-        self.compression_level = compression_level;
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            header: FileHeader::default(),
+        }
+    }
+
+    /// zstd compression level (negative values select zstd's fast modes)
+    #[must_use]
+    pub fn compression_level(mut self, level: i32) -> Self {
+        self.header.compression_level = level;
         self
     }
 
-    pub fn with_compression_level(&mut self, compression_level: usize) -> &mut Self {
-        self.with_optional_compression_level(Some(compression_level))
-    }
-
-    pub fn with_block_size(&mut self, block_size: usize) -> &mut Self {
-        self.block_size = Some(block_size);
-        self
-    }
-
-    pub fn with_optional_block_size(&mut self, block_size: Option<usize>) -> &mut Self {
-        self.block_size = block_size;
-        self
-    }
-
-    pub fn is_paired(&mut self, is_paired: bool) -> &mut Self {
-        self.is_paired = Some(is_paired);
-        self
-    }
-
-    pub fn with_flags(&mut self, with_flags: bool) -> &mut Self {
-        self.with_flags = Some(with_flags);
-        self
-    }
-
-    pub fn with_headers(&mut self, with_headers: bool) -> &mut Self {
-        self.with_headers = Some(with_headers);
-        self
-    }
-
-    pub fn with_qualities(&mut self, with_qualities: bool) -> &mut Self {
-        self.with_qualities = Some(with_qualities);
+    /// Target uncompressed block size in bytes
+    #[must_use]
+    pub fn block_size(mut self, block_size: usize) -> Self {
+        self.header.block_size = block_size as u64;
         self
     }
 
     #[must_use]
-    pub fn build(&self) -> FileHeader {
-        let mut header = FileHeader {
-            magic: *FILE_MAGIC,
-            version: FILE_VERSION,
-            compression_level: self
-                .compression_level
-                .map_or(DEFAULT_COMPRESSION_LEVEL, |level| level as u64),
-            block_size: self
-                .block_size
-                .map_or(DEFAULT_BLOCK_SIZE, |size| size as u64),
-            presence_flags: 0,
-            reserved: [0; 32],
-        };
+    pub fn paired(self, paired: bool) -> Self {
+        self.presence(PRESENCE_PAIRED, paired)
+    }
 
-        // default to unpaired
-        if let Some(true) = self.is_paired {
-            header.set_paired();
+    #[must_use]
+    pub fn flags(self, flags: bool) -> Self {
+        self.presence(PRESENCE_FLAGS, flags)
+    }
+
+    #[must_use]
+    pub fn headers(self, headers: bool) -> Self {
+        self.presence(PRESENCE_HEADERS, headers)
+    }
+
+    #[must_use]
+    pub fn qualities(self, qualities: bool) -> Self {
+        self.presence(PRESENCE_QUALITIES, qualities)
+    }
+
+    fn presence(mut self, bit: u64, on: bool) -> Self {
+        if on {
+            self.header.presence_flags |= bit;
+        } else {
+            self.header.presence_flags &= !bit;
         }
+        self
+    }
 
-        // default to using headers
-        match self.with_headers {
-            Some(false) => {}
-            _ => header.set_headers(),
-        }
-
-        // default to not using flags
-        if let Some(true) = self.with_flags {
-            header.set_flags();
-        }
-
-        // default to using qualities
-        match self.with_qualities {
-            Some(false) => {}
-            _ => header.set_qualities(),
-        }
-
-        header
+    #[must_use]
+    pub fn build(self) -> FileHeader {
+        self.header
     }
 }
 
@@ -244,5 +225,33 @@ mod tests {
             FileHeader::from_bytes(header.as_bytes()),
             Err(Error::CbqError(CbqError::UnsupportedFileVersion { .. }))
         ));
+    }
+
+    #[test]
+    fn test_compression_level_layout_matches_u64() {
+        // The on-disk field was a little-endian u64; the i32 must occupy its low bytes.
+        assert_eq!(size_of::<FileHeader>(), 64);
+        let header = FileHeaderBuilder::new().compression_level(-5).build();
+        let bytes = header.as_bytes();
+        assert_eq!(&bytes[16..20], &(-5i32).to_le_bytes());
+        assert_eq!(&bytes[20..24], &[0; 4]);
+        assert_eq!(FileHeader::from_bytes(bytes).unwrap().compression_level, -5);
+    }
+
+    #[test]
+    fn test_builder_defaults_and_toggles() {
+        let header = FileHeaderBuilder::new().build();
+        assert_eq!(header, FileHeader::default());
+        assert!(header.has_headers() && header.has_qualities());
+        assert!(!header.is_paired() && !header.has_flags());
+
+        let header = FileHeaderBuilder::new()
+            .paired(true)
+            .flags(true)
+            .headers(false)
+            .qualities(false)
+            .build();
+        assert!(header.is_paired() && header.has_flags());
+        assert!(!header.has_headers() && !header.has_qualities());
     }
 }

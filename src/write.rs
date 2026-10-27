@@ -299,7 +299,7 @@ impl BinseqWriterBuilder {
             headers: header.has_headers(),
             paired: header.is_paired(),
             block_size: Some(header.block_size as usize),
-            compression_level: Some(header.compression_level as i32),
+            compression_level: Some(header.compression_level),
             ..Self::new(Format::Cbq)
         }
     }
@@ -418,17 +418,18 @@ impl BinseqWriterBuilder {
     }
 
     fn build_cbq<W: Write>(self, writer: W) -> Result<BinseqWriter<W>> {
-        let header = cbq::FileHeaderBuilder::default()
-            .is_paired(self.paired)
-            .with_qualities(self.quality)
-            .with_headers(self.headers)
-            .with_flags(self.flags)
-            .with_optional_block_size(self.block_size)
-            .with_optional_compression_level(
-                self.compression_level
-                    .map(|level| usize::try_from(level).unwrap_or(0)),
-            )
-            .build();
+        let mut header_builder = cbq::FileHeaderBuilder::new()
+            .paired(self.paired)
+            .qualities(self.quality)
+            .headers(self.headers)
+            .flags(self.flags);
+        if let Some(size) = self.block_size {
+            header_builder = header_builder.block_size(size);
+        }
+        if let Some(level) = self.compression_level {
+            header_builder = header_builder.compression_level(level);
+        }
+        let header = header_builder.build();
 
         let inner = if self.headless {
             cbq::ColumnarBlockWriter::new_headless(writer, header)?
@@ -693,6 +694,18 @@ mod tests {
         assert!(!writer.is_paired());
         assert!(writer.has_quality());
         assert!(writer.has_headers());
+        Ok(())
+    }
+
+    #[test]
+    fn test_build_cbq_writer_negative_compression_level() -> Result<()> {
+        let writer = BinseqWriterBuilder::new(Format::Cbq)
+            .compression_level(-3)
+            .build(Cursor::new(Vec::new()))?;
+        let BinseqWriter::Cbq(writer) = writer else {
+            unreachable!()
+        };
+        assert_eq!(writer.header().compression_level, -3);
         Ok(())
     }
 
