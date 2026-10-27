@@ -20,6 +20,9 @@ struct Args {
     reps: usize,
     #[clap(short, long, default_value_t = 3)]
     level: i32,
+    /// only run this format (cbq|vbq)
+    #[clap(short, long)]
+    format: Option<String>,
 }
 
 struct Rng(u64);
@@ -72,6 +75,12 @@ fn main() -> Result<()> {
 
     let dir = tempfile::tempdir()?;
     for fmt in [Format::Cbq, Format::Vbq] {
+        if a.format
+            .as_deref()
+            .is_some_and(|f| f != fmt.extension().trim_start_matches('.'))
+        {
+            continue;
+        }
         let path = dir.path().join(format!("b.{}", fmt.extension()));
         let (mut wt, mut rt) = (vec![], vec![]);
         for _ in 0..a.reps {
