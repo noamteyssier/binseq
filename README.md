@@ -36,5 +36,5 @@ Commits are checked with [`prek`](https://github.com/j178/prek), which runs `car
 Register the hooks once per clone:
 
 ```bash
-cargo install --locked prek && prek install
+uv tool install prek && prek install
 ```
