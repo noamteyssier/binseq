@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- CBQ readers now reject files and blocks written by a newer format version (`CbqError::UnsupportedFileVersion` / `UnsupportedBlockVersion`) instead of silently misparsing them.
 - The BQ parallel reader panicked when a processor returned an error; it now returns the `Err` like the VBQ and CBQ readers.
 
 ## [0.10.0] - 2026-08-25

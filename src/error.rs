@@ -246,6 +246,14 @@ pub enum CbqError {
     #[error("Invalid file header MAGIC found")]
     InvalidFileHeaderMagic,
 
+    /// The file was written by a newer CBQ format version than this library supports
+    #[error("Unsupported CBQ file version {found} (this library supports up to {supported})")]
+    UnsupportedFileVersion { found: u8, supported: u8 },
+
+    /// A block was written by a newer CBQ format version than this library supports
+    #[error("Unsupported CBQ block version {found} (this library supports up to {supported})")]
+    UnsupportedBlockVersion { found: u8, supported: u8 },
+
     #[error("Invalid index header MAGIC found")]
     InvalidIndexHeaderMagic,
 

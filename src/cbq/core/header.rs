@@ -123,6 +123,13 @@ impl FileHeader {
         if header.magic != *FILE_MAGIC {
             return Err(CbqError::InvalidFileHeaderMagic.into());
         }
+        if header.version > FILE_VERSION {
+            return Err(CbqError::UnsupportedFileVersion {
+                found: header.version,
+                supported: FILE_VERSION,
+            }
+            .into());
+        }
         Ok(header)
     }
 }
@@ -219,5 +226,23 @@ impl FileHeaderBuilder {
         }
 
         header
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Error;
+
+    #[test]
+    fn test_from_bytes_rejects_newer_version() {
+        let mut header = FileHeader::default();
+        assert!(FileHeader::from_bytes(header.as_bytes()).is_ok());
+
+        header.version = FILE_VERSION + 1;
+        assert!(matches!(
+            FileHeader::from_bytes(header.as_bytes()),
+            Err(Error::CbqError(CbqError::UnsupportedFileVersion { .. }))
+        ));
     }
 }

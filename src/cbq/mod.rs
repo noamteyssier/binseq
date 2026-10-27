@@ -94,6 +94,9 @@ pub const INDEX_MAGIC: &[u8; 8] = b"CBQINDEX";
 /// The current file version.
 pub const FILE_VERSION: u8 = 1;
 
+/// The current block version.
+pub const BLOCK_VERSION: u8 = 1;
+
 /// The default block size.
 pub const DEFAULT_BLOCK_SIZE: u64 = 1024 * 1024;
 
