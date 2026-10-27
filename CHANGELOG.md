@@ -27,6 +27,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `with_optional_block_size` / `with_optional_compression_level` removed.
 - **Compression level is `i32` throughout** (`cbq::FileHeader::compression_level`, `cbq::DEFAULT_COMPRESSION_LEVEL`, and `cbq::FileHeaderBuilder::compression_level`)
   - the on-disk header is byte-identical: the `i32` sits in the low bytes of the former `u64` field.
+- **`encode_fastx` no longer needs a `'static` output writer**
+  - `BinseqWriterBuilder::encode_fastx<W: Write + Send + 'a>` returns `FastxEncoderBuilder<'a>`, so you can encode into e.g. a `&mut Vec<u8>` or a locked stdout handle;
+  - breaking only where `FastxEncoderBuilder` is named in a struct field or type alias (add the lifetime).
 - VBQ and CBQ parallel readers borrow the mmap and block ranges instead of cloning them per thread.
 
 ### Removed

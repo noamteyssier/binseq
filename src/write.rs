@@ -335,10 +335,10 @@ impl BinseqWriterBuilder {
     /// ```
     #[cfg(feature = "paraseq")]
     #[must_use]
-    pub fn encode_fastx<W: Write + Send + 'static>(
+    pub fn encode_fastx<'a, W: Write + Send + 'a>(
         self,
         output: W,
-    ) -> crate::utils::FastxEncoderBuilder {
+    ) -> crate::utils::FastxEncoderBuilder<'a> {
         crate::utils::FastxEncoderBuilder::new(self, Box::new(output))
     }
 
