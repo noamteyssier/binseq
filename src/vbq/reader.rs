@@ -16,7 +16,7 @@ use memmap2::Mmap;
 use zstd::zstd_safe;
 
 use super::{
-    BlockHeader, BlockIndex, BlockRange, FileHeader,
+    BlockHeader, BlockIndex, FileHeader,
     header::{SIZE_BLOCK_HEADER, SIZE_HEADER},
 };
 use crate::DEFAULT_QUALITY_SCORE;
@@ -825,7 +825,7 @@ impl ParallelReader for MmapReader {
         let blocks_per_thread = relevant_blocks.len().div_ceil(num_threads);
 
         // Create shared resources
-        let mmap = Arc::clone(&self.mmap);
+        let mmap: &[u8] = &self.mmap;
         let header = self.header;
 
         std::thread::scope(|s| -> Result<()> {
@@ -842,20 +842,18 @@ impl ParallelReader for MmapReader {
                     continue;
                 }
 
-                let mmap = Arc::clone(&mmap);
                 let mut proc = processor.clone();
                 proc.set_tid(thread_id);
 
                 // Get block ranges for this thread
-                let thread_blocks: Vec<BlockRange> =
-                    relevant_blocks[start_block_idx..end_block_idx].to_vec();
+                let thread_blocks = &relevant_blocks[start_block_idx..end_block_idx];
 
                 let handle = s.spawn(move || -> Result<()> {
                     // Create block to reuse for processing (within thread)
                     let mut record_block = RecordBlock::new(header.bits, header.block as usize);
 
                     // Process each assigned block
-                    for block_range in thread_blocks {
+                    for &block_range in thread_blocks {
                         // Clear the block for reuse
                         record_block.clear();
 
