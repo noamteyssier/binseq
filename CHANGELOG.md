@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.0] - Unreleased
+
+### Changed
+
+- **`ParallelProcessor` no longer needs to be `'static`**
+  - parallel readers run workers on `std::thread::scope`, so processors may borrow from the caller's scope (e.g. hold a `&AtomicUsize` instead of an `Arc<Mutex<_>>`);
+  - `ParallelReader` method bounds are now `P: ParallelProcessor` (the redundant `Clone` is dropped, it was already a supertrait);
+  - breaking for downstream implementors of `ParallelReader`: remove `+ 'static` from your method bounds.
+- VBQ and CBQ parallel readers borrow the mmap and block ranges instead of cloning them per thread.
+
+### Fixed
+
+- The BQ parallel reader panicked when a processor returned an error; it now returns the `Err` like the VBQ and CBQ readers.
+
 ## [0.10.0] - 2026-08-25
 
 - Large cleanup of internal and public API.
