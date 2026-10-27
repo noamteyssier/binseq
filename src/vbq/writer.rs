@@ -11,7 +11,7 @@
 
 use std::io::Write;
 
-use zstd::stream::copy_encode;
+use crate::codec;
 
 use super::header::{BlockHeader, FileHeader};
 use crate::SequencingRecord;
@@ -551,7 +551,7 @@ impl BlockWriter {
 
     fn flush_compressed<W: Write>(&mut self, inner: &mut W) -> Result<BlockHeader> {
         // Encode the block
-        copy_encode(self.ubuf.as_slice(), &mut self.zbuf, self.level)?;
+        codec::encode(&mut self.zbuf, self.ubuf.as_slice(), self.level)?;
 
         // Build a block header (this is variably sized in the compressed case)
         let header = BlockHeader::new(self.zbuf.len() as u64, self.starts.len() as u32);

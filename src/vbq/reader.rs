@@ -10,10 +10,10 @@ use std::ops::Range;
 use std::path::Path;
 use std::sync::Arc;
 
+use crate::codec::DCtx;
 use crate::utils::read_u64_le;
 use bitnuc_deprec::BitSize;
 use memmap2::Mmap;
-use zstd::zstd_safe;
 
 use super::{
     BlockHeader, BlockIndex, FileHeader,
@@ -106,7 +106,7 @@ pub struct RecordBlock {
     block_size: usize,
 
     /// Reusable zstd decompression context
-    dctx: zstd_safe::DCtx<'static>,
+    dctx: DCtx,
 
     /// Reusable decoding buffer for the block
     dbuf: Vec<u8>,
@@ -132,7 +132,7 @@ impl RecordBlock {
             sequences: Vec::default(),
             rbuf: Vec::default(),
             dbuf: Vec::default(),
-            dctx: zstd_safe::DCtx::create(),
+            dctx: DCtx::default(),
             qbuf: Vec::default(),
             default_quality_score: DEFAULT_QUALITY_SCORE,
         }
@@ -197,17 +197,8 @@ impl RecordBlock {
         has_header: bool,
         has_flags: bool,
     ) -> Result<()> {
-        // Clear and ensure capacity
-        self.rbuf.clear();
-        if self.rbuf.capacity() < self.block_size {
-            self.rbuf.reserve(self.block_size - self.rbuf.capacity());
-        }
-
         // Reuse the decompression context - avoids allocation!
-        let bytes_read = self
-            .dctx
-            .decompress(&mut self.rbuf, bytes)
-            .map_err(|code| std::io::Error::other(zstd_safe::get_error_name(code)))?;
+        let bytes_read = self.dctx.decompress_vec(&mut self.rbuf, bytes)?;
 
         if bytes_read != self.block_size {
             return Err(ReadError::PartialRecord(bytes_read).into());

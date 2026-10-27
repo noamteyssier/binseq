@@ -1,7 +1,6 @@
 use std::io;
 
-use zstd::zstd_safe;
-
+use crate::codec::CCtx;
 use crate::{
     Result, SequencingRecord,
     cbq::core::{BlockHeader, ColumnarBlock, FileHeader, Index, IndexFooter, IndexHeader},
@@ -19,20 +18,17 @@ pub struct ColumnarBlockWriter<W: io::Write> {
     headers: Vec<BlockHeader>,
 
     /// Compression context for the thread
-    cctx: zstd_safe::CCtx<'static>,
+    cctx: CCtx,
 }
 impl<W: io::Write + Clone> Clone for ColumnarBlockWriter<W> {
     fn clone(&self) -> Self {
-        let mut writer = Self {
+        Self {
             inner: self.inner.clone(),
             block: self.block.clone(),
             headers: self.headers.clone(),
-            cctx: zstd_safe::CCtx::create(),
-        };
-        writer
-            .init_compressor()
-            .expect("Failed to set compression level in writer clone");
-        writer
+            cctx: CCtx::new(self.block.header.compression_level as i32, true)
+                .expect("Failed to set compression level in writer clone"),
+        }
     }
 }
 impl<W: io::Write> ColumnarBlockWriter<W> {
@@ -49,33 +45,14 @@ impl<W: io::Write> ColumnarBlockWriter<W> {
 
     /// Creates a new writer without writing the header to the inner writer
     pub fn new_headless(inner: W, header: FileHeader) -> Result<Self> {
-        let mut writer = Self {
+        let block = ColumnarBlock::new(header);
+        let cctx = CCtx::new(block.header.compression_level as i32, true)?;
+        Ok(Self {
             inner,
-            block: ColumnarBlock::new(header),
+            block,
             headers: Vec::default(),
-            cctx: zstd_safe::CCtx::create(),
-        };
-
-        // Set the compression level for this writer
-        writer.init_compressor()?;
-
-        Ok(writer)
-    }
-
-    /// Initializes the zstd context (compression level + long-distance matching).
-    fn init_compressor(&mut self) -> Result<()> {
-        // Initialize the compressor with the compression level
-        self.cctx
-            .set_parameter(zstd_safe::CParameter::CompressionLevel(
-                self.block.header.compression_level as i32,
-            ))
-            .map_err(|e| io::Error::other(zstd_safe::get_error_name(e)))?;
-
-        // Set long distance matching
-        self.cctx
-            .set_parameter(zstd_safe::CParameter::EnableLongDistanceMatching(true))
-            .map_err(|e| io::Error::other(zstd_safe::get_error_name(e)))?;
-        Ok(())
+            cctx,
+        })
     }
 
     pub fn header(&self) -> FileHeader {

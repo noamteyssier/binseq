@@ -61,6 +61,7 @@ pub mod bq;
 pub mod vbq;
 
 /// Shared nucleotide encoder for BQ/VBQ writers
+mod codec;
 mod encoder;
 
 /// Error definitions

@@ -1,5 +1,5 @@
+use crate::codec;
 use bytemuck::{Pod, Zeroable};
-use zstd::stream::copy_encode;
 
 use crate::{Result, error::CbqError};
 
@@ -132,7 +132,7 @@ impl Index {
     /// Encodes the index into a ZSTD-compressed byte array
     pub fn encoded(&self) -> Result<Vec<u8>> {
         let mut encoded = Vec::default();
-        copy_encode(self.as_bytes(), &mut encoded, 0)?;
+        codec::encode(&mut encoded, self.as_bytes(), 0)?;
         Ok(encoded)
     }
 

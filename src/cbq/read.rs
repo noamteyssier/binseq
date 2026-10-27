@@ -1,7 +1,7 @@
 use std::{fs, io, path::Path, sync::Arc, thread};
 
+use crate::codec::{self, DCtx};
 use memmap2::Mmap;
-use zstd::{stream::copy_decode, zstd_safe};
 
 use crate::{
     BinseqRecord, ParallelProcessor, ParallelReader, Result,
@@ -85,7 +85,7 @@ impl<R: io::Read> Reader<R> {
 
         // Reads the compressed index data
         self.inner.read_exact(&mut z_index_buf)?;
-        copy_decode(z_index_buf.as_slice(), &mut index_buf)?;
+        codec::decode(&mut index_buf, z_index_buf.as_slice())?;
         let index = Index::from_bytes(&index_buf)?;
 
         // Read the footer data from the reader
@@ -105,7 +105,7 @@ pub struct MmapReader {
     block: ColumnarBlock,
 
     /// Reusable decompression context
-    dctx: zstd_safe::DCtx<'static>,
+    dctx: DCtx,
 }
 impl Clone for MmapReader {
     fn clone(&self) -> Self {
@@ -113,7 +113,7 @@ impl Clone for MmapReader {
             inner: self.inner.clone(),
             index: self.index.clone(),
             block: self.block.clone(),
-            dctx: zstd_safe::DCtx::create(),
+            dctx: DCtx::default(),
         }
     }
 }
@@ -141,7 +141,7 @@ impl MmapReader {
 
             // Decompress the index
             let mut index_buf = Vec::default();
-            copy_decode(z_index_slice, &mut index_buf)?;
+            codec::decode(&mut index_buf, z_index_slice)?;
 
             // Load the index
             Index::from_bytes(&index_buf)
@@ -151,7 +151,7 @@ impl MmapReader {
             inner: Arc::new(inner),
             index: Arc::new(index),
             block: ColumnarBlock::new(header),
-            dctx: zstd_safe::DCtx::create(),
+            dctx: DCtx::default(),
         })
     }
 

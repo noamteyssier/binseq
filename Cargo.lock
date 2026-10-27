@@ -97,13 +97,13 @@ dependencies = [
  "itoa",
  "memchr",
  "memmap2",
+ "mzstd",
  "paraseq",
  "parking_lot",
  "rand",
  "sucds",
  "tempfile",
  "thiserror 2.0.21",
- "zstd 0.14.0",
 ]
 
 [[package]]
@@ -133,6 +133,18 @@ dependencies = [
  "fearless_simd",
  "thiserror 2.0.21",
 ]
+
+[[package]]
+name = "borrowed-buf"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7f17ad7280ae7c89e7f53e05a9cd48d66b77b51c4ad7fb7a5195cec0e2548b50"
+
+[[package]]
+name = "branches"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "570b591f2c5947596f3e5b0fcf59a71068ece15aa710446ce7eb670c3620350c"
 
 [[package]]
 name = "bytemuck"
@@ -373,6 +385,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f3772b63c40606beea8fe1f7b06a60de27ceb9bfc2d9dad3427368ca41dc7e62"
 
 [[package]]
+name = "fearless_simd_macros"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3e91d94c6885390b81782d7ee60fd6583b33907333a8b340de25ccf468353315"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.6",
+]
+
+[[package]]
 name = "find-msvc-tools"
 version = "0.1.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -560,6 +583,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "mzstd"
+version = "0.2.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fcbacf3eb356c6f3b6ea82d0181a676669a71ad9086e050f0390c67a4fbc1d9f"
+dependencies = [
+ "borrowed-buf",
+ "branches",
+ "fearless_simd",
+ "fearless_simd_macros",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "niffler"
 version = "3.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -571,7 +607,7 @@ dependencies = [
  "flate2",
  "liblzma",
  "thiserror 2.0.21",
- "zstd 0.13.3",
+ "zstd",
 ]
 
 [[package]]
@@ -942,16 +978,7 @@ version = "0.13.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e91ee311a569c327171651566e07972200e76fcfe2242a4fa446149a3881c08a"
 dependencies = [
- "zstd-safe 7.3.0",
-]
-
-[[package]]
-name = "zstd"
-version = "0.14.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bf06bd8162af0734b344780deb55b42a2429ae430870d13fcc12f238e880fe6e"
-dependencies = [
- "zstd-safe 8.0.0",
+ "zstd-safe",
 ]
 
 [[package]]
@@ -959,15 +986,6 @@ name = "zstd-safe"
 version = "7.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "64d80649ab6db9d9f6f9c80a40becd948eda4714a0a5ac8c4d157a32231c7882"
-dependencies = [
- "zstd-sys",
-]
-
-[[package]]
-name = "zstd-safe"
-version = "8.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ae42c0555055784c70058d19ba8e275528e8a99a706684868ace5da4e716a4ab"
 dependencies = [
  "zstd-sys",
 ]

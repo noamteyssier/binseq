@@ -22,7 +22,7 @@ parking_lot = {version = "0.12.5", optional = true }
 rand = { version = "0.10.3" }
 sucds = "0.9.1"
 thiserror = "2.0.21"
-zstd = { version = "0.14.0", features = ["zstdmt"] }
+mzstd = "0.2.8"
 
 [dev-dependencies]
 memchr = "2.8.3"

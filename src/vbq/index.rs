@@ -9,10 +9,10 @@
 //! The compressed section is ZSTD-compressed and holds an `IndexHeader`
 //! (32 bytes) followed by one 32-byte `BlockRange` per data block.
 
-use std::io::{Cursor, Read, Write};
+use std::io::Write;
 
+use crate::codec;
 use crate::utils::{read_u32_le, read_u64_le};
-use zstd::{Decoder, Encoder};
 
 use crate::error::{IndexError, Result};
 
@@ -165,9 +165,11 @@ impl BlockIndex {
     /// Write the index to an output buffer
     pub fn write_bytes<W: Write>(&self, writer: &mut W) -> Result<()> {
         self.header.write_bytes(writer)?;
-        let mut writer = Encoder::new(writer, 3)?.auto_finish();
-        self.write_range(&mut writer)?;
-        writer.flush()?;
+        let mut raw = Vec::new();
+        self.write_range(&mut raw)?;
+        let mut z = Vec::new();
+        codec::encode(&mut z, &raw, 3)?;
+        writer.write_all(&z)?;
         Ok(())
     }
 
@@ -188,8 +190,7 @@ impl BlockIndex {
         let index_header = IndexHeader::from_bytes(bytes)?;
         let buffer = {
             let mut buffer = Vec::new();
-            let mut decoder = Decoder::new(Cursor::new(&bytes[INDEX_HEADER_SIZE..]))?;
-            decoder.read_to_end(&mut buffer)?;
+            codec::decode(&mut buffer, &bytes[INDEX_HEADER_SIZE..])?;
             buffer
         };
 

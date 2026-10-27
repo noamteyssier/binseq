@@ -1,10 +1,9 @@
 use std::io;
 
+use crate::codec::{self, DCtx};
 use bytemuck::{cast_slice, cast_slice_mut};
 use sucds::Serializable;
 use sucds::mii_sequences::{EliasFano, EliasFanoBuilder};
-use zstd::stream::copy_decode;
-use zstd::zstd_safe;
 
 use crate::cbq::core::utils::sized_compress;
 use crate::error::{CbqError, WriteError};
@@ -382,7 +381,7 @@ impl ColumnarBlock {
     }
 
     /// Compress all native columns into compressed representation
-    fn compress_columns(&mut self, cctx: &mut zstd_safe::CCtx) -> Result<()> {
+    fn compress_columns(&mut self, cctx: &mut codec::CCtx) -> Result<()> {
         // compress sequence lengths
 
         sized_compress(&mut self.z_seq_len, cast_slice(&self.l_seq), cctx)?;
@@ -422,28 +421,26 @@ impl ColumnarBlock {
 
     /// Decompress all columns back to native representation.
     ///
-    /// Note: `copy_decode` into a `&mut Vec<T>` appends; pre-resized buffers
-    /// must be passed as `&mut [T]` to be overwritten.
     pub fn decompress_columns(&mut self) -> Result<()> {
+        let mut dctx = DCtx::default();
         // decompress sequence lengths
         {
             self.l_seq.resize(self.num_sequences, 0);
-            copy_decode(self.z_seq_len.as_slice(), cast_slice_mut(&mut self.l_seq))?;
+            dctx.decompress(cast_slice_mut(&mut self.l_seq), self.z_seq_len.as_slice())?;
         }
 
         // decompress header lengths
         if !self.z_header_len.is_empty() {
             self.l_headers.resize(self.num_sequences, 0);
-            copy_decode(
-                self.z_header_len.as_slice(),
+            dctx.decompress(
                 cast_slice_mut(&mut self.l_headers),
+                self.z_header_len.as_slice(),
             )?;
         }
 
         // decompress npos
         if !self.z_npos.is_empty() {
-            self.ef_bytes.reserve(self.len_nef);
-            copy_decode(self.z_npos.as_slice(), &mut self.ef_bytes)?;
+            dctx.decompress_vec(&mut self.ef_bytes, self.z_npos.as_slice())?;
 
             #[allow(clippy::redundant_closure_for_method_calls)]
             let ef = EliasFano::deserialize_from(self.ef_bytes.as_slice())
@@ -454,7 +451,7 @@ impl ColumnarBlock {
         // decompress sequence
         {
             self.ebuf.resize(self.ebuf_len(), 0);
-            copy_decode(self.z_seq.as_slice(), self.ebuf.as_mut_slice())?;
+            dctx.decompress(self.ebuf.as_mut_slice(), self.z_seq.as_slice())?;
 
             bitnuc::decode_resize(&self.ebuf, self.nuclen, &mut self.seq)?;
             self.backfill_npos();
@@ -463,17 +460,17 @@ impl ColumnarBlock {
         // decompress flags
         if !self.z_flags.is_empty() {
             self.flags.resize(self.num_records, 0);
-            copy_decode(self.z_flags.as_slice(), cast_slice_mut(&mut self.flags))?;
+            dctx.decompress(cast_slice_mut(&mut self.flags), self.z_flags.as_slice())?;
         }
 
         // decompress headers
         if !self.z_headers.is_empty() {
-            copy_decode(self.z_headers.as_slice(), &mut self.headers)?;
+            dctx.decompress_vec(&mut self.headers, self.z_headers.as_slice())?;
         }
 
         // decompress quality scores
         if !self.z_qual.is_empty() {
-            copy_decode(self.z_qual.as_slice(), &mut self.qual)?;
+            dctx.decompress_vec(&mut self.qual, self.z_qual.as_slice())?;
         }
 
         // calculate offsets
@@ -499,7 +496,7 @@ impl ColumnarBlock {
     pub fn flush_to<W: io::Write>(
         &mut self,
         writer: &mut W,
-        cctx: &mut zstd_safe::CCtx,
+        cctx: &mut codec::CCtx,
     ) -> Result<Option<BlockHeader>> {
         if self.is_empty() {
             return Ok(None);
@@ -558,7 +555,7 @@ impl ColumnarBlock {
         &mut self,
         bytes: &[u8],
         header: BlockHeader,
-        dctx: &mut zstd_safe::DCtx,
+        dctx: &mut DCtx,
     ) -> Result<()> {
         // clears the internal state
         self.clear();
@@ -577,8 +574,7 @@ impl ColumnarBlock {
             dctx.decompress(
                 cast_slice_mut(&mut self.l_seq),
                 slice_and_increment(&mut byte_offset, header.len_z_seq_len, bytes),
-            )
-            .map_err(|e| io::Error::other(zstd_safe::get_error_name(e)))?;
+            )?;
 
             // update default quality score buffer size
             self.l_seq.iter().for_each(|len| {
@@ -594,8 +590,7 @@ impl ColumnarBlock {
             dctx.decompress(
                 cast_slice_mut(&mut self.l_headers),
                 slice_and_increment(&mut byte_offset, header.len_z_header_len, bytes),
-            )
-            .map_err(|e| io::Error::other(zstd_safe::get_error_name(e)))?;
+            )?;
         }
 
         // calculate offsets
@@ -610,8 +605,7 @@ impl ColumnarBlock {
             dctx.decompress(
                 &mut self.ef_bytes,
                 slice_and_increment(&mut byte_offset, header.len_z_npos, bytes),
-            )
-            .map_err(|e| io::Error::other(zstd_safe::get_error_name(e)))?;
+            )?;
 
             // reinitialize the EliasFano encoding
             #[allow(clippy::redundant_closure_for_method_calls)]
@@ -627,8 +621,7 @@ impl ColumnarBlock {
             dctx.decompress(
                 self.ebuf.as_mut_slice(),
                 slice_and_increment(&mut byte_offset, header.len_z_seq, bytes),
-            )
-            .map_err(|e| io::Error::other(zstd_safe::get_error_name(e)))?;
+            )?;
 
             bitnuc::decode_resize(&self.ebuf, self.nuclen, &mut self.seq)?;
             self.backfill_npos();
@@ -640,8 +633,7 @@ impl ColumnarBlock {
             dctx.decompress(
                 cast_slice_mut(&mut self.flags),
                 slice_and_increment(&mut byte_offset, header.len_z_flags, bytes),
-            )
-            .map_err(|e| io::Error::other(zstd_safe::get_error_name(e)))?;
+            )?;
         }
 
         // decompress headers
@@ -653,8 +645,7 @@ impl ColumnarBlock {
             dctx.decompress(
                 &mut self.headers,
                 slice_and_increment(&mut byte_offset, header.len_z_headers, bytes),
-            )
-            .map_err(|e| io::Error::other(zstd_safe::get_error_name(e)))?;
+            )?;
         }
 
         // decompress quality scores
@@ -663,8 +654,7 @@ impl ColumnarBlock {
             dctx.decompress(
                 &mut self.qual,
                 slice_and_increment(&mut byte_offset, header.len_z_qual, bytes),
-            )
-            .map_err(|e| io::Error::other(zstd_safe::get_error_name(e)))?;
+            )?;
         }
 
         Ok(())
@@ -963,7 +953,8 @@ mod tests {
     use crate::Error;
     use crate::SequencingRecordBuilder;
     use crate::cbq::core::FileHeaderBuilder;
-    use zstd::zstd_safe;
+    use crate::codec;
+    use crate::codec::DCtx;
 
     fn full_header(block_size: usize) -> FileHeader {
         FileHeaderBuilder::default()
@@ -1054,7 +1045,7 @@ mod tests {
             )
             .unwrap();
 
-        let mut cctx = zstd_safe::CCtx::create();
+        let mut cctx = codec::CCtx::new(3, false).unwrap();
         let mut buffer = Vec::new();
         let block_header = block.flush_to(&mut buffer, &mut cctx).unwrap().unwrap();
 
@@ -1382,7 +1373,7 @@ mod tests {
             .push(full_record(s_seq, x_seq, &s_qual, &x_qual))
             .unwrap();
 
-        let mut cctx = zstd_safe::CCtx::create();
+        let mut cctx = codec::CCtx::new(3, false).unwrap();
         let mut buffer = Vec::new();
         let block_header = block.flush_to(&mut buffer, &mut cctx).unwrap().unwrap();
 
@@ -1429,7 +1420,7 @@ mod tests {
             .push(full_record(s_seq, x_seq, &s_qual, &x_qual))
             .unwrap();
 
-        let mut cctx = zstd_safe::CCtx::create();
+        let mut cctx = codec::CCtx::new(3, false).unwrap();
         let mut buffer = Vec::new();
         let block_header = block.flush_to(&mut buffer, &mut cctx).unwrap().unwrap();
 
@@ -1437,7 +1428,7 @@ mod tests {
         // only the compressed column bytes, matching `MmapReader::load_block`.
         let column_bytes = &buffer[std::mem::size_of::<BlockHeader>()..];
 
-        let mut dctx = zstd_safe::DCtx::create();
+        let mut dctx = DCtx::default();
         let mut reader_block = ColumnarBlock::new(header);
         reader_block
             .decompress_from_bytes(column_bytes, block_header, &mut dctx)
@@ -1472,7 +1463,7 @@ mod tests {
             )
             .unwrap();
 
-        let mut cctx = zstd_safe::CCtx::create();
+        let mut cctx = codec::CCtx::new(3, false).unwrap();
         let mut buffer = Vec::new();
         let block_header = block.flush_to(&mut buffer, &mut cctx).unwrap().unwrap();
 
@@ -1505,7 +1496,7 @@ mod tests {
             )
             .unwrap();
 
-        let mut cctx = zstd_safe::CCtx::create();
+        let mut cctx = codec::CCtx::new(3, false).unwrap();
         let mut buffer = Vec::new();
         let block_header = block.flush_to(&mut buffer, &mut cctx).unwrap().unwrap();
 
