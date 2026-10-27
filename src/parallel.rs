@@ -120,6 +120,31 @@ impl ParallelReader for BinseqReader {
     }
 }
 
+/// Validate that a record range is well-formed and within the file's bounds
+pub(crate) fn validate_range(total_records: usize, range: &Range<usize>) -> Result<()> {
+    if range.start >= total_records {
+        Err(ReadError::OutOfRange {
+            requested_index: range.start,
+            max_index: total_records,
+        }
+        .into())
+    } else if range.end > total_records {
+        Err(ReadError::OutOfRange {
+            requested_index: range.end,
+            max_index: total_records,
+        }
+        .into())
+    } else if range.start > range.end {
+        Err(ReadError::InvalidRange {
+            start: range.start,
+            end: range.end,
+        }
+        .into())
+    } else {
+        Ok(())
+    }
+}
+
 /// Clamp a requested thread count to the available parallelism.
 ///
 /// A request of 0 means "use all available cores".
@@ -147,31 +172,6 @@ pub trait ParallelReader {
         num_threads: usize,
         range: Range<usize>,
     ) -> Result<()>;
-
-    /// Validate that a record range is well-formed and within the file's bounds
-    fn validate_range(&self, total_records: usize, range: &Range<usize>) -> Result<()> {
-        if range.start >= total_records {
-            Err(ReadError::OutOfRange {
-                requested_index: range.start,
-                max_index: total_records,
-            }
-            .into())
-        } else if range.end > total_records {
-            Err(ReadError::OutOfRange {
-                requested_index: range.end,
-                max_index: total_records,
-            }
-            .into())
-        } else if range.start > range.end {
-            Err(ReadError::InvalidRange {
-                start: range.start,
-                end: range.end,
-            }
-            .into())
-        } else {
-            Ok(())
-        }
-    }
 }
 
 /// Trait for types that can process records in parallel.

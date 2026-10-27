@@ -34,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- **`ParallelReader::validate_range`**: an internal helper, now a crate-private function. Implementors of `ParallelReader` that called it should inline their own bounds check.
 - **`Policy::handle` and `RNG_SEED` from the public API**
   - writers apply the policy internally, and exposing `handle` put `rand::Rng` in binseq's public API;
   - `rand` upgrades are no longer breaking changes to binseq.

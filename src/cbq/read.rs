@@ -235,7 +235,7 @@ impl ParallelReader for MmapReader {
 
         // validate range
         let total_records = self.num_records();
-        self.validate_range(total_records, &range)?;
+        crate::parallel::validate_range(total_records, &range)?;
 
         let mut iv_start = 0;
         let relevant_blocks = self
