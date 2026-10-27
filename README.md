@@ -29,3 +29,12 @@ To get started please refer to our [documentation](https://docs.rs/binseq/latest
 For example programs which make use of the library check out our [examples directory](https://github.com/noamteyssier/binseq/tree/main/examples).
 
 For more information about the BINSEQ file family, please refer to our [preprint](https://www.biorxiv.org/content/10.1101/2025.04.08.647863v2).
+
+## Development
+
+Commits are checked with [`prek`](https://github.com/j178/prek), which runs `cargo fmt --check` and `cargo clippy --all-targets --all-features -- -D warnings`.
+Register the hooks once per clone:
+
+```bash
+cargo install --locked prek && prek install
+```
