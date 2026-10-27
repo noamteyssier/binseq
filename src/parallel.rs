@@ -297,6 +297,22 @@ mod testing {
         }
     }
 
+    #[derive(Clone)]
+    struct FailingProcessor;
+    impl ParallelProcessor for FailingProcessor {
+        fn process_record<R: BinseqRecord>(&mut self, _record: R) -> Result<()> {
+            Err(std::io::Error::other("processor failure").into())
+        }
+    }
+
+    #[test]
+    fn test_parallel_processor_error_propagates() {
+        for ext in ["bq", "vbq", "cbq"] {
+            let reader = BinseqReader::new(format!("./data/subset.{ext}")).unwrap();
+            assert!(reader.process_parallel(FailingProcessor, 0).is_err());
+        }
+    }
+
     #[test]
     fn test_parallel_processor_range() {
         for ext in ["bq", "vbq", "cbq"] {

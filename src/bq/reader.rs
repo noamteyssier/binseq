@@ -712,10 +712,7 @@ impl ParallelReader for MmapReader {
             }
 
             for handle in handles {
-                handle
-                    .join()
-                    .expect("Error joining handle (1)")
-                    .expect("Error joining handle (2)");
+                handle.join().unwrap()?;
             }
 
             Ok(())
