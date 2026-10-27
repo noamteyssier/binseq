@@ -90,7 +90,7 @@ impl BinseqReader {
     ///
     /// Inherent convenience for [`ParallelReader::process_parallel_range`], callable
     /// without importing the trait.
-    pub fn process_parallel_range<P: ParallelProcessor + Clone + 'static>(
+    pub fn process_parallel_range<P: ParallelProcessor>(
         self,
         processor: P,
         num_threads: usize,
@@ -100,7 +100,7 @@ impl BinseqReader {
     }
 }
 impl ParallelReader for BinseqReader {
-    fn process_parallel<P: ParallelProcessor + Clone + 'static>(
+    fn process_parallel<P: ParallelProcessor>(
         self,
         processor: P,
         num_threads: usize,
@@ -109,7 +109,7 @@ impl ParallelReader for BinseqReader {
         self.process_parallel_range(processor, num_threads, 0..num_records)
     }
 
-    fn process_parallel_range<P: ParallelProcessor + Clone + 'static>(
+    fn process_parallel_range<P: ParallelProcessor>(
         self,
         processor: P,
         num_threads: usize,
@@ -140,14 +140,11 @@ pub(crate) fn clamp_threads(num_threads: usize) -> usize {
 /// This is implemented by the **reader** not by the **processor**.
 /// For the **processor**, see the [`ParallelProcessor`] trait.
 pub trait ParallelReader {
-    fn process_parallel<P: ParallelProcessor + Clone + 'static>(
-        self,
-        processor: P,
-        num_threads: usize,
-    ) -> Result<()>;
+    fn process_parallel<P: ParallelProcessor>(self, processor: P, num_threads: usize)
+    -> Result<()>;
 
     /// Process a range of record indices in parallel, distributed across `num_threads`
-    fn process_parallel_range<P: ParallelProcessor + Clone + 'static>(
+    fn process_parallel_range<P: ParallelProcessor>(
         self,
         processor: P,
         num_threads: usize,
@@ -270,6 +267,33 @@ mod testing {
             let processor = TestProcessor::default();
             assert!(reader.process_parallel(processor.clone(), 0).is_ok());
             assert_eq!(*processor.n_records.lock(), num_records);
+        }
+    }
+
+    /// A processor that borrows stack state, so it is not `'static`.
+    #[derive(Clone)]
+    struct BorrowingProcessor<'a> {
+        n_records: &'a std::sync::atomic::AtomicUsize,
+    }
+    impl ParallelProcessor for BorrowingProcessor<'_> {
+        fn process_record<R: BinseqRecord>(&mut self, _record: R) -> Result<()> {
+            self.n_records
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn test_parallel_processor_non_static() {
+        for ext in ["bq", "vbq", "cbq"] {
+            let reader = BinseqReader::new(format!("./data/subset.{ext}")).unwrap();
+            let num_records = reader.num_records().unwrap();
+            let n_records = std::sync::atomic::AtomicUsize::new(0);
+            let processor = BorrowingProcessor {
+                n_records: &n_records,
+            };
+            reader.process_parallel(processor, 0).unwrap();
+            assert_eq!(n_records.into_inner(), num_records);
         }
     }
 

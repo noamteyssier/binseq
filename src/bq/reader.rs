@@ -585,7 +585,7 @@ pub(crate) const BATCH_SIZE: usize = 1024;
 
 impl ParallelReader for MmapReader {
     /// Processes all records in parallel across the given number of threads
-    fn process_parallel<P: ParallelProcessor + Clone + 'static>(
+    fn process_parallel<P: ParallelProcessor>(
         self,
         processor: P,
         num_threads: usize,
@@ -595,7 +595,7 @@ impl ParallelReader for MmapReader {
     }
 
     /// Processes a range of record indices in parallel
-    fn process_parallel_range<P: ParallelProcessor + Clone + 'static>(
+    fn process_parallel_range<P: ParallelProcessor>(
         self,
         processor: P,
         num_threads: usize,
@@ -612,113 +612,114 @@ impl ParallelReader for MmapReader {
         let range_size = range.end - range.start;
         let records_per_thread = range_size.div_ceil(num_threads);
 
-        // Arc self
-        let reader = Arc::new(self);
+        let reader = &self;
 
-        // Build thread handles
-        let mut handles = Vec::new();
-        for tid in 0..num_threads {
-            let mut processor = processor.clone();
-            let reader = reader.clone();
-            processor.set_tid(tid);
+        std::thread::scope(|s| -> Result<()> {
+            // Build thread handles
+            let mut handles = Vec::new();
+            for tid in 0..num_threads {
+                let mut processor = processor.clone();
+                processor.set_tid(tid);
 
-            let handle = std::thread::spawn(move || -> Result<()> {
-                let start_idx = range.start + tid * records_per_thread;
-                let end_idx = (start_idx + records_per_thread).min(range.end);
+                let handle = s.spawn(move || -> Result<()> {
+                    let start_idx = range.start + tid * records_per_thread;
+                    let end_idx = (start_idx + records_per_thread).min(range.end);
 
-                if start_idx >= end_idx {
-                    return Ok(()); // No records for this thread
-                }
-
-                // create a reusable buffer for translating record IDs
-                let mut translater = itoa::Buffer::new();
-
-                // initialize a decoding buffer
-                let mut dbuf = Vec::new();
-
-                // initialize a quality score buffer
-                let qbuf = reader.build_qbuf();
-
-                // calculate the size of a record in the cast u64 slice
-                let rsize_u64 = reader.config.record_size_bytes() / 8;
-
-                // determine the required scalar size
-                let scalar = reader.config.scalar();
-
-                // calculate the size of a record in the batch decoded buffer
-                let mut dbuf_rsize = { (reader.config.schunk() + reader.config.xchunk()) * scalar };
-                if reader.config.flags {
-                    dbuf_rsize += scalar;
-                }
-
-                // iterate over the range of indices
-                for range_start in (start_idx..end_idx).step_by(BATCH_SIZE) {
-                    let range_end = (range_start + BATCH_SIZE).min(end_idx);
-
-                    // clear the decoded buffer
-                    dbuf.clear();
-
-                    // get the encoded buffer slice
-                    let ebuf = reader.get_buffer_slice(range_start..range_end)?;
-
-                    // decode the entire buffer at once (with flags and extra bases)
-                    reader
-                        .config
-                        .bitsize
-                        .decode(ebuf, ebuf.len() * scalar, &mut dbuf)?;
-
-                    // iterate over each index in the range
-                    for (inner_idx, idx) in (range_start..range_end).enumerate() {
-                        // translate the index
-                        let id_str = translater.format(idx);
-
-                        // create the index buffer
-                        let mut header_buf = [0; 20];
-                        let header_len = id_str.len();
-                        header_buf[..header_len].copy_from_slice(id_str.as_bytes());
-
-                        // find the buffer starts
-                        let ebuf_start = inner_idx * rsize_u64;
-                        let dbuf_start = inner_idx * dbuf_rsize;
-
-                        // initialize the record
-                        let record = BatchRecord {
-                            inner: RefRecord {
-                                buffer: &ebuf[ebuf_start..(ebuf_start + rsize_u64)],
-                                qbuf: &qbuf,
-                                id: idx as u64,
-                                config: reader.config,
-                                header_buf,
-                                header_len,
-                            },
-                            dbuf: &dbuf[dbuf_start..(dbuf_start + dbuf_rsize)],
-                        };
-
-                        // process the record
-                        processor.process_record(record)?;
+                    if start_idx >= end_idx {
+                        return Ok(()); // No records for this thread
                     }
 
-                    // process the batch
-                    processor.on_batch_complete()?;
-                }
+                    // create a reusable buffer for translating record IDs
+                    let mut translater = itoa::Buffer::new();
 
-                // process the thread
-                processor.on_thread_complete()?;
+                    // initialize a decoding buffer
+                    let mut dbuf = Vec::new();
 
-                Ok(())
-            });
+                    // initialize a quality score buffer
+                    let qbuf = reader.build_qbuf();
 
-            handles.push(handle);
-        }
+                    // calculate the size of a record in the cast u64 slice
+                    let rsize_u64 = reader.config.record_size_bytes() / 8;
 
-        for handle in handles {
-            handle
-                .join()
-                .expect("Error joining handle (1)")
-                .expect("Error joining handle (2)");
-        }
+                    // determine the required scalar size
+                    let scalar = reader.config.scalar();
 
-        Ok(())
+                    // calculate the size of a record in the batch decoded buffer
+                    let mut dbuf_rsize =
+                        { (reader.config.schunk() + reader.config.xchunk()) * scalar };
+                    if reader.config.flags {
+                        dbuf_rsize += scalar;
+                    }
+
+                    // iterate over the range of indices
+                    for range_start in (start_idx..end_idx).step_by(BATCH_SIZE) {
+                        let range_end = (range_start + BATCH_SIZE).min(end_idx);
+
+                        // clear the decoded buffer
+                        dbuf.clear();
+
+                        // get the encoded buffer slice
+                        let ebuf = reader.get_buffer_slice(range_start..range_end)?;
+
+                        // decode the entire buffer at once (with flags and extra bases)
+                        reader
+                            .config
+                            .bitsize
+                            .decode(ebuf, ebuf.len() * scalar, &mut dbuf)?;
+
+                        // iterate over each index in the range
+                        for (inner_idx, idx) in (range_start..range_end).enumerate() {
+                            // translate the index
+                            let id_str = translater.format(idx);
+
+                            // create the index buffer
+                            let mut header_buf = [0; 20];
+                            let header_len = id_str.len();
+                            header_buf[..header_len].copy_from_slice(id_str.as_bytes());
+
+                            // find the buffer starts
+                            let ebuf_start = inner_idx * rsize_u64;
+                            let dbuf_start = inner_idx * dbuf_rsize;
+
+                            // initialize the record
+                            let record = BatchRecord {
+                                inner: RefRecord {
+                                    buffer: &ebuf[ebuf_start..(ebuf_start + rsize_u64)],
+                                    qbuf: &qbuf,
+                                    id: idx as u64,
+                                    config: reader.config,
+                                    header_buf,
+                                    header_len,
+                                },
+                                dbuf: &dbuf[dbuf_start..(dbuf_start + dbuf_rsize)],
+                            };
+
+                            // process the record
+                            processor.process_record(record)?;
+                        }
+
+                        // process the batch
+                        processor.on_batch_complete()?;
+                    }
+
+                    // process the thread
+                    processor.on_thread_complete()?;
+
+                    Ok(())
+                });
+
+                handles.push(handle);
+            }
+
+            for handle in handles {
+                handle
+                    .join()
+                    .expect("Error joining handle (1)")
+                    .expect("Error joining handle (2)");
+            }
+
+            Ok(())
+        })
     }
 }
 
