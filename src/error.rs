@@ -40,13 +40,11 @@ pub enum Error {
     #[error("Error determining BINSEQ format: {0}")]
     FormatError(#[from] FormatError),
 
-    /// Errors from the deprecated bitnuc dependency for nucleotide encoding/decoding (bq/vbq)
+    /// Nucleotide encoding/decoding errors from `bitnuc`
+    ///
+    /// Boxed so that `bitnuc` upgrades are not breaking changes to this type.
     #[error("Bitnuc error: {0}")]
-    BitnucError(#[from] bitnuc_deprec::Error),
-
-    /// Errors from the bitnuc dependency for nucleotide encoding/decoding (cbq)
-    #[error("Bitnuc error: {0}")]
-    BitnucEncodingError(#[from] bitnuc::BitnucError),
+    BitnucError(Box<dyn StdError + Send + Sync>),
 
     /// Conversion errors from anyhow errors
     #[cfg(feature = "anyhow")]
@@ -56,6 +54,18 @@ pub enum Error {
     /// Generic errors for other unexpected situations
     #[error("Generic error: {0}")]
     GenericError(#[from] Box<dyn StdError + Send + Sync>),
+}
+
+impl From<bitnuc_deprec::Error> for Error {
+    fn from(err: bitnuc_deprec::Error) -> Self {
+        Self::BitnucError(Box::new(err))
+    }
+}
+
+impl From<bitnuc::BitnucError> for Error {
+    fn from(err: bitnuc::BitnucError) -> Self {
+        Self::BitnucError(Box::new(err))
+    }
 }
 
 /// Errors specific to processing and validating binary sequence headers

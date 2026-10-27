@@ -18,7 +18,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - future variants (new codecs, formats, error cases) can land in minor releases;
   - breaking for downstream exhaustive `match`es: add a `_ =>` arm.
 - `BinseqReader::Cbq` and `BinseqWriter::Cbq` now hold a `Box` (`Box<cbq::MmapReader>`, `Box<cbq::ColumnarBlockWriter<W>>`), shrinking both enums to the size of their BQ/VBQ variants.
+- **`Error::BitnucError` / `Error::BitnucEncodingError` merged into one boxed `Error::BitnucError(Box<dyn Error + Send + Sync>)`**
+  - `bitnuc` upgrades are no longer breaking changes to `binseq::Error`;
+  - `?` conversion from both `bitnuc` error types still works.
 - VBQ and CBQ parallel readers borrow the mmap and block ranges instead of cloning them per thread.
+
+### Removed
+
+- **`Policy::handle` and `RNG_SEED` from the public API**
+  - writers apply the policy internally, and exposing `handle` put `rand::Rng` in binseq's public API;
+  - `rand` upgrades are no longer breaking changes to binseq.
 
 ### Fixed
 
