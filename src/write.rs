@@ -436,18 +436,13 @@ impl BinseqWriterBuilder {
             cbq::ColumnarBlockWriter::new(writer, header)?
         };
 
-        Ok(BinseqWriter::Cbq(inner))
+        Ok(BinseqWriter::Cbq(Box::new(inner)))
     }
 }
 
 /// Unified writer for BINSEQ formats
 ///
 /// Wraps the three format-specific writers behind one interface.
-// `cbq::ColumnarBlockWriter` is intrinsically larger than the other variants (it holds a
-// reusable `ColumnarBlock` encode buffer). Boxing it would shrink this enum but is a breaking
-// change to the variant's public field type, so it's left as-is rather than churn downstream
-// consumers.
-#[allow(clippy::large_enum_variant)]
 #[non_exhaustive]
 pub enum BinseqWriter<W: Write> {
     /// BQ format writer
@@ -455,7 +450,7 @@ pub enum BinseqWriter<W: Write> {
     /// VBQ format writer
     Vbq(vbq::Writer<W>),
     /// CBQ format writer
-    Cbq(cbq::ColumnarBlockWriter<W>),
+    Cbq(Box<cbq::ColumnarBlockWriter<W>>),
 }
 
 impl<W: Write> BinseqWriter<W> {
@@ -589,7 +584,7 @@ impl<W: Write> BinseqWriter<W> {
             }
             Self::Cbq(w) => {
                 let inner = cbq::ColumnarBlockWriter::new_headless(Vec::new(), w.header())?;
-                Ok(BinseqWriter::Cbq(inner))
+                Ok(BinseqWriter::Cbq(Box::new(inner)))
             }
         }
     }

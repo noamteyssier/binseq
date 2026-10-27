@@ -31,22 +31,18 @@ fn sniff_format<P: AsRef<Path>>(path: P) -> Result<Format> {
 /// distinction between BINSEQ readers is not important.
 ///
 /// For more specialized workflows see [`bq::MmapReader`], [`vbq::MmapReader`], and [`cbq::MmapReader`].
-// `cbq::MmapReader` is intrinsically larger than the other variants (it holds a reusable
-// `ColumnarBlock` decode buffer). Boxing it would shrink this enum but is a breaking change to
-// the variant's public field type, so it's left as-is rather than churn downstream consumers.
-#[allow(clippy::large_enum_variant)]
 #[non_exhaustive]
 pub enum BinseqReader {
     Bq(bq::MmapReader),
     Vbq(vbq::MmapReader),
-    Cbq(cbq::MmapReader),
+    Cbq(Box<cbq::MmapReader>),
 }
 impl BinseqReader {
     pub fn new<P: AsRef<Path>>(path: P) -> Result<Self> {
         match sniff_format(&path)? {
             Format::Bq => Ok(Self::Bq(bq::MmapReader::new(path)?)),
             Format::Vbq => Ok(Self::Vbq(vbq::MmapReader::new(path)?)),
-            Format::Cbq => Ok(Self::Cbq(cbq::MmapReader::new(path)?)),
+            Format::Cbq => Ok(Self::Cbq(Box::new(cbq::MmapReader::new(path)?))),
         }
     }
 
