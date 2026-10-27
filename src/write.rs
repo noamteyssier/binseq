@@ -65,6 +65,7 @@ use crate::{BitSize, Policy, Result, SequencingRecord, bq, cbq, error::WriteErro
 
 /// Output format for BINSEQ files
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub enum Format {
     /// BQ format - fixed length records, no quality scores
     Bq,
@@ -447,6 +448,7 @@ impl BinseqWriterBuilder {
 // change to the variant's public field type, so it's left as-is rather than churn downstream
 // consumers.
 #[allow(clippy::large_enum_variant)]
+#[non_exhaustive]
 pub enum BinseqWriter<W: Write> {
     /// BQ format writer
     Bq(bq::Writer<W>),

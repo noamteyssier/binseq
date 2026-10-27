@@ -12,6 +12,7 @@ pub const RNG_SEED: u64 = 42;
 /// Defaults to `IgnoreSequence`, which skips offending sequences.
 /// Only applies to BQ/VBQ; CBQ stores `N`s natively.
 #[derive(Debug, Clone, Copy, Default)]
+#[non_exhaustive]
 pub enum Policy {
     /// Skip sequences containing invalid nucleotides (default policy)
     #[default]

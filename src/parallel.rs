@@ -35,6 +35,7 @@ fn sniff_format<P: AsRef<Path>>(path: P) -> Result<Format> {
 // `ColumnarBlock` decode buffer). Boxing it would shrink this enum but is a breaking change to
 // the variant's public field type, so it's left as-is rather than churn downstream consumers.
 #[allow(clippy::large_enum_variant)]
+#[non_exhaustive]
 pub enum BinseqReader {
     Bq(bq::MmapReader),
     Vbq(vbq::MmapReader),

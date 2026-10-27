@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - parallel readers run workers on `std::thread::scope`, so processors may borrow from the caller's scope (e.g. hold a `&AtomicUsize` instead of an `Arc<Mutex<_>>`);
   - `ParallelReader` method bounds are now `P: ParallelProcessor` (the redundant `Clone` is dropped, it was already a supertrait);
   - breaking for downstream implementors of `ParallelReader`: remove `+ 'static` from your method bounds.
+- **Public enums are now `#[non_exhaustive]`**
+  - `Error`, `HeaderError`, `ReadError`, `WriteError`, `IndexError`, `CbqError`, `FormatError`, `Policy`, `Format`, `BinseqReader`, and `BinseqWriter`;
+  - future variants (new codecs, formats, error cases) can land in minor releases;
+  - breaking for downstream exhaustive `match`es: add a `_ =>` arm.
 - VBQ and CBQ parallel readers borrow the mmap and block ranges instead of cloning them per thread.
 
 ### Fixed
