@@ -49,6 +49,7 @@
 //! ```
 
 #![allow(clippy::module_inception)]
+#![cfg_attr(test, allow(clippy::assert_is_empty))]
 
 /// CBQ - columnar variable-length records, optional quality scores and headers
 pub mod cbq;

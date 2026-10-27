@@ -16,7 +16,7 @@ use memmap2::Mmap;
 use zstd::zstd_safe;
 
 use super::{
-    BlockHeader, BlockIndex, BlockRange, FileHeader,
+    BlockHeader, BlockIndex, FileHeader,
     header::{SIZE_BLOCK_HEADER, SIZE_HEADER},
 };
 use crate::DEFAULT_QUALITY_SCORE;
@@ -777,9 +777,8 @@ impl MmapReader {
 impl ParallelReader for MmapReader {
     /// Processes all records in parallel by distributing blocks across threads.
     ///
-    /// The processor is cloned per thread; share state via thread-safe
-    /// containers like `Arc`.
-    fn process_parallel<P: ParallelProcessor + Clone + 'static>(
+    /// The processor is cloned per thread and may borrow from the caller's scope.
+    fn process_parallel<P: ParallelProcessor>(
         self,
         processor: P,
         num_threads: usize,
@@ -789,7 +788,7 @@ impl ParallelReader for MmapReader {
     }
 
     /// Processes only the records within `range` in parallel.
-    fn process_parallel_range<P: ParallelProcessor + Clone + 'static>(
+    fn process_parallel_range<P: ParallelProcessor>(
         self,
         processor: P,
         num_threads: usize,
@@ -825,97 +824,93 @@ impl ParallelReader for MmapReader {
         let blocks_per_thread = relevant_blocks.len().div_ceil(num_threads);
 
         // Create shared resources
-        let mmap = Arc::clone(&self.mmap);
+        let mmap: &[u8] = &self.mmap;
         let header = self.header;
 
-        // Spawn worker threads
-        let mut handles = Vec::new();
+        std::thread::scope(|s| -> Result<()> {
+            // Spawn worker threads
+            let mut handles = Vec::new();
 
-        for thread_id in 0..num_threads {
-            // Calculate this thread's block range
-            let start_block_idx = thread_id * blocks_per_thread;
-            let end_block_idx =
-                std::cmp::min((thread_id + 1) * blocks_per_thread, relevant_blocks.len());
+            for thread_id in 0..num_threads {
+                // Calculate this thread's block range
+                let start_block_idx = thread_id * blocks_per_thread;
+                let end_block_idx =
+                    std::cmp::min((thread_id + 1) * blocks_per_thread, relevant_blocks.len());
 
-            if start_block_idx >= relevant_blocks.len() {
-                continue;
-            }
-
-            let mmap = Arc::clone(&mmap);
-            let mut proc = processor.clone();
-            proc.set_tid(thread_id);
-
-            // Get block ranges for this thread
-            let thread_blocks: Vec<BlockRange> =
-                relevant_blocks[start_block_idx..end_block_idx].to_vec();
-
-            let handle = std::thread::spawn(move || -> Result<()> {
-                // Create block to reuse for processing (within thread)
-                let mut record_block = RecordBlock::new(header.bits, header.block as usize);
-
-                // Process each assigned block
-                for block_range in thread_blocks {
-                    // Clear the block for reuse
-                    record_block.clear();
-
-                    // Skip the block header to get to data
-                    let block_start = block_range.start_offset as usize + SIZE_BLOCK_HEADER;
-                    let block_data = &mmap[block_start..block_start + block_range.len as usize];
-
-                    // Ingest data according to the compression setting
-                    if header.compressed {
-                        record_block.ingest_compressed_bytes(
-                            block_data,
-                            header.qual,
-                            header.headers,
-                            header.flags,
-                        )?;
-                    } else {
-                        record_block.ingest_bytes(
-                            block_data,
-                            header.qual,
-                            header.headers,
-                            header.flags,
-                        )?;
-                    }
-
-                    // Update the record block index
-                    record_block.update_index(block_range.cumulative_records as usize);
-
-                    // decode the data
-                    if self.decode_block {
-                        record_block.decode_all()?;
-                    }
-
-                    // Process records in this block that fall within our range
-                    for record in record_block.iter() {
-                        let global_record_idx = record.index as usize;
-
-                        // Only process records within our specified range
-                        if global_record_idx >= range.start && global_record_idx < range.end {
-                            proc.process_record(record)?;
-                        }
-                    }
-
-                    // Signal batch completion
-                    proc.on_batch_complete()?;
+                if start_block_idx >= relevant_blocks.len() {
+                    continue;
                 }
 
-                // Signal thread completion
-                proc.on_thread_complete()?;
+                let mut proc = processor.clone();
+                proc.set_tid(thread_id);
 
-                Ok(())
-            });
+                // Get block ranges for this thread
+                let thread_blocks = &relevant_blocks[start_block_idx..end_block_idx];
 
-            handles.push(handle);
-        }
+                let handle = s.spawn(move || -> Result<()> {
+                    // Create block to reuse for processing (within thread)
+                    let mut record_block = RecordBlock::new(header.bits, header.block as usize);
 
-        // Wait for all threads to complete
-        for handle in handles {
-            handle.join().unwrap()?;
-        }
+                    // Process each assigned block
+                    for &block_range in thread_blocks {
+                        // Clear the block for reuse
+                        record_block.clear();
 
-        Ok(())
+                        // Skip the block header to get to data
+                        let block_start = block_range.start_offset as usize + SIZE_BLOCK_HEADER;
+                        let block_data = &mmap[block_start..block_start + block_range.len as usize];
+
+                        // Ingest data according to the compression setting
+                        if header.compressed {
+                            record_block.ingest_compressed_bytes(
+                                block_data,
+                                header.qual,
+                                header.headers,
+                                header.flags,
+                            )?;
+                        } else {
+                            record_block.ingest_bytes(
+                                block_data,
+                                header.qual,
+                                header.headers,
+                                header.flags,
+                            )?;
+                        }
+
+                        // Update the record block index
+                        record_block.update_index(block_range.cumulative_records as usize);
+
+                        // decode the data
+                        if self.decode_block {
+                            record_block.decode_all()?;
+                        }
+
+                        // Process records in this block that fall within our range
+                        for record in record_block.iter() {
+                            let global_record_idx = record.index as usize;
+
+                            // Only process records within our specified range
+                            if global_record_idx >= range.start && global_record_idx < range.end {
+                                proc.process_record(record)?;
+                            }
+                        }
+
+                        // Signal batch completion
+                        proc.on_batch_complete()?;
+                    }
+
+                    // Signal thread completion
+                    proc.on_thread_complete()?;
+
+                    Ok(())
+                });
+
+                handles.push(handle);
+            }
+
+            // Wait for all threads to complete
+            handles.into_iter().try_for_each(|h| h.join().unwrap())
+        })
     }
 }
 

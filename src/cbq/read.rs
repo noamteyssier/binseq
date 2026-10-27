@@ -216,7 +216,7 @@ impl MmapReader {
     }
 }
 impl ParallelReader for MmapReader {
-    fn process_parallel<P: ParallelProcessor + Clone + 'static>(
+    fn process_parallel<P: ParallelProcessor>(
         self,
         processor: P,
         num_threads: usize,
@@ -225,7 +225,7 @@ impl ParallelReader for MmapReader {
         self.process_parallel_range(processor, num_threads, 0..num_records)
     }
 
-    fn process_parallel_range<P: ParallelProcessor + Clone + 'static>(
+    fn process_parallel_range<P: ParallelProcessor>(
         self,
         processor: P,
         num_threads: usize,
@@ -254,37 +254,35 @@ impl ParallelReader for MmapReader {
             return Ok(()); // nothing to do
         }
 
-        // Distribute blocks evenly across threads
-        let mut handles = Vec::new();
-        for t_block_ranges in relevant_blocks.chunks(num_blocks.div_ceil(num_threads)) {
-            let t_block_ranges = t_block_ranges.to_vec();
-            let range = range.clone();
-            let mut t_reader = self.clone();
-            let mut t_proc = processor.clone();
+        let range = &range;
+        thread::scope(|s| -> crate::Result<()> {
+            // Distribute blocks evenly across threads
+            let mut handles = Vec::new();
+            for t_block_ranges in relevant_blocks.chunks(num_blocks.div_ceil(num_threads)) {
+                let mut t_reader = self.clone();
+                let mut t_proc = processor.clone();
 
-            let thread_handle = thread::spawn(move || -> crate::Result<()> {
-                for b_range in t_block_ranges {
-                    t_reader.load_block(b_range)?;
-                    for record in t_reader.block.iter_records(b_range) {
-                        let global_record_idx = record.index() as usize;
+                let thread_handle = s.spawn(move || -> crate::Result<()> {
+                    for &b_range in t_block_ranges {
+                        t_reader.load_block(b_range)?;
+                        for record in t_reader.block.iter_records(b_range) {
+                            let global_record_idx = record.index() as usize;
 
-                        // Only process records within our specified range
-                        if global_record_idx >= range.start && global_record_idx < range.end {
-                            t_proc.process_record(record)?;
+                            // Only process records within our specified range
+                            if global_record_idx >= range.start && global_record_idx < range.end {
+                                t_proc.process_record(record)?;
+                            }
                         }
+                        t_proc.on_batch_complete()?;
                     }
-                    t_proc.on_batch_complete()?;
-                }
-                t_proc.on_thread_complete()?;
-                Ok(())
-            });
-            handles.push(thread_handle);
-        }
+                    t_proc.on_thread_complete()?;
+                    Ok(())
+                });
+                handles.push(thread_handle);
+            }
 
-        for handle in handles {
-            handle.join().unwrap()?;
-        }
-        Ok(())
+            handles.into_iter().try_for_each(|h| h.join().unwrap())
+        })
     }
 }
 #[cfg(test)]
