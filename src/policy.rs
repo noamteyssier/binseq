@@ -5,13 +5,14 @@ use rand::{Rng, RngExt};
 use crate::error::{Result, WriteError};
 
 /// Seed for the RNG used by `RandomDraw`, for reproducibility across runs
-pub const RNG_SEED: u64 = 42;
+pub(crate) const RNG_SEED: u64 = 42;
 
 /// Policy for handling invalid nucleotides (anything other than A, C, G, T) during encoding
 ///
 /// Defaults to `IgnoreSequence`, which skips offending sequences.
 /// Only applies to BQ/VBQ; CBQ stores `N`s natively.
 #[derive(Debug, Clone, Copy, Default)]
+#[non_exhaustive]
 pub enum Policy {
     /// Skip sequences containing invalid nucleotides (default policy)
     #[default]
@@ -60,23 +61,12 @@ impl Policy {
     ///
     /// Returns `Ok(true)` if the sequence should be encoded, `Ok(false)` if it should
     /// be skipped (`IgnoreSequence`), or an error (`BreakOnInvalid`).
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use binseq::{Policy, Result};
-    /// # fn main() -> Result<()> {
-    /// let mut output = Vec::new();
-    /// let mut rng = rand::rng();
-    ///
-    /// let should_process = Policy::SetToA.handle(b"ACGTNX", &mut output, &mut rng)?;
-    ///
-    /// assert!(should_process);
-    /// assert_eq!(output, b"ACGTAA");
-    /// # Ok(())
-    /// # }
-    /// ```
-    pub fn handle<R: Rng>(&self, sequence: &[u8], ibuf: &mut Vec<u8>, rng: &mut R) -> Result<bool> {
+    pub(crate) fn handle<R: Rng>(
+        self,
+        sequence: &[u8],
+        ibuf: &mut Vec<u8>,
+        rng: &mut R,
+    ) -> Result<bool> {
         ibuf.clear();
         match self {
             Self::IgnoreSequence => Ok(false),

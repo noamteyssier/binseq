@@ -18,7 +18,7 @@ use crate::{
 };
 
 type BoxedRead = Box<dyn Read + Send>;
-type BoxedWrite = Box<dyn Write + Send>;
+type BoxedWrite<'a> = Box<dyn Write + Send + 'a>;
 
 /// Input source for FASTX encoding
 #[derive(Debug, Clone)]
@@ -56,17 +56,17 @@ enum FastxInput {
 ///     .run()?;
 /// # Ok::<(), binseq::Error>(())
 /// ```
-pub struct FastxEncoderBuilder {
+pub struct FastxEncoderBuilder<'a> {
     builder: BinseqWriterBuilder,
-    output: BoxedWrite,
+    output: BoxedWrite<'a>,
     input: Option<FastxInput>,
     ordered: bool,
     threads: usize,
 }
 
-impl FastxEncoderBuilder {
+impl<'a> FastxEncoderBuilder<'a> {
     /// Create a new encoder builder
-    pub(crate) fn new(builder: BinseqWriterBuilder, output: BoxedWrite) -> Self {
+    pub(crate) fn new(builder: BinseqWriterBuilder, output: BoxedWrite<'a>) -> Self {
         Self {
             builder,
             output,
@@ -205,18 +205,18 @@ fn detect_seq_len(
 
 /// Parallel encoder implementing `paraseq`'s processor traits
 #[derive(Clone)]
-struct Encoder {
+struct Encoder<'a> {
     /// Global writer (shared across threads)
-    writer: Arc<Mutex<BinseqWriter<Box<dyn Write + Send>>>>,
+    writer: Arc<Mutex<BinseqWriter<BoxedWrite<'a>>>>,
     /// Thread-local writer buffer
     thread_writer: BinseqWriter<Vec<u8>>,
     /// Whether the output should follow same order as input
     ordered: bool,
 }
 
-impl Encoder {
+impl<'a> Encoder<'a> {
     /// Create a new encoder with a global writer
-    pub fn new(writer: BinseqWriter<Box<dyn Write + Send>>, ordered: bool) -> Result<Self> {
+    pub fn new(writer: BinseqWriter<BoxedWrite<'a>>, ordered: bool) -> Result<Self> {
         let thread_writer = writer.new_headless_buffer()?;
         Ok(Self {
             writer: Arc::new(Mutex::new(writer)),
@@ -241,7 +241,7 @@ impl Encoder {
     }
 }
 
-impl<Rf: Record> ParallelProcessor<Rf> for Encoder {
+impl<Rf: Record> ParallelProcessor<Rf> for Encoder<'_> {
     fn process_record(&mut self, record: Rf) -> paraseq::Result<()> {
         let seq = record.seq();
         let seq_record = SequencingRecordBuilder::default()
@@ -273,7 +273,7 @@ impl<Rf: Record> ParallelProcessor<Rf> for Encoder {
     }
 }
 
-impl<Rf: Record> PairedParallelProcessor<Rf> for Encoder {
+impl<Rf: Record> PairedParallelProcessor<Rf> for Encoder<'_> {
     fn process_record_pair(&mut self, record1: Rf, record2: Rf) -> paraseq::Result<()> {
         let sseq = record1.seq();
         let xseq = record2.seq();
@@ -388,6 +388,18 @@ mod tests {
 
         // Run the encoder builder and assert that it is successful
         assert!(encoder_builder.run().is_ok());
+    }
+
+    /// The output writer only needs to outlive the `run` call, not be `'static`.
+    #[test]
+    fn test_encode_fastx_into_borrowed_writer() {
+        let mut out = Vec::new();
+        BinseqWriterBuilder::new(Format::Cbq)
+            .encode_fastx(&mut out)
+            .input(FASTQ_R1_PATH)
+            .run()
+            .unwrap();
+        assert!(out.starts_with(crate::cbq::FILE_MAGIC));
     }
 
     #[derive(Clone, Default)]

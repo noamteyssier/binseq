@@ -235,7 +235,7 @@ impl ParallelReader for MmapReader {
 
         // validate range
         let total_records = self.num_records();
-        self.validate_range(total_records, &range)?;
+        crate::parallel::validate_range(total_records, &range)?;
 
         let mut iv_start = 0;
         let relevant_blocks = self
@@ -343,12 +343,12 @@ mod tests {
 
     fn make_empty_cbq() -> Vec<u8> {
         use crate::cbq::{ColumnarBlockWriter, core::FileHeaderBuilder};
-        let header = FileHeaderBuilder::default()
-            .is_paired(false)
-            .with_headers(false)
-            .with_qualities(false)
-            .with_flags(false)
-            .with_block_size(64)
+        let header = FileHeaderBuilder::new()
+            .paired(false)
+            .headers(false)
+            .qualities(false)
+            .flags(false)
+            .block_size(64)
             .build();
         let mut writer = ColumnarBlockWriter::new(Vec::new(), header).unwrap();
         writer.finish().unwrap();

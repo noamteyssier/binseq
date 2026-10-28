@@ -66,18 +66,28 @@ pub trait BinseqRecord {
 
     /// Returns the decoded primary sequence.
     ///
+    /// Supported by every record passed to a [`ParallelProcessor`](crate::ParallelProcessor).
+    ///
     /// # Panics
     ///
-    /// The default implementation panics; all record types in this library override it.
+    /// The default implementation panics. [`bq::RefRecord`](crate::bq::RefRecord) (from
+    /// [`bq::MmapReader::get`](crate::bq::MmapReader::get) and
+    /// [`bq::StreamReader`](crate::bq::StreamReader)) is a view over the packed data with no
+    /// decoded buffer, so it does not override this; use [`decode_s`](Self::decode_s) instead.
     fn sseq(&self) -> &[u8] {
         unimplemented!("This record does not implement direct sequence access");
     }
 
     /// Returns the decoded extended sequence.
     ///
+    /// Supported by every record passed to a [`ParallelProcessor`](crate::ParallelProcessor).
+    ///
     /// # Panics
     ///
-    /// The default implementation panics; all record types in this library override it.
+    /// The default implementation panics. [`bq::RefRecord`](crate::bq::RefRecord) (from
+    /// [`bq::MmapReader::get`](crate::bq::MmapReader::get) and
+    /// [`bq::StreamReader`](crate::bq::StreamReader)) is a view over the packed data with no
+    /// decoded buffer, so it does not override this; use [`decode_x`](Self::decode_x) instead.
     fn xseq(&self) -> &[u8] {
         unimplemented!("This record does not implement direct sequence access");
     }

@@ -802,7 +802,7 @@ impl ParallelReader for MmapReader {
 
         // Validate range
         let total_records = index.num_records();
-        self.validate_range(total_records, &range)?;
+        crate::parallel::validate_range(total_records, &range)?;
 
         // Find blocks that contain records in the specified range
         let relevant_blocks = index

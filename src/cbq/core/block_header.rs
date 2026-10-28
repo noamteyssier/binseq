@@ -4,7 +4,7 @@ use bytemuck::{Pod, Zeroable};
 
 use crate::{IntoBinseqError, Result, error::CbqError};
 
-use super::{BLOCK_MAGIC, ColumnarBlock};
+use super::{BLOCK_MAGIC, BLOCK_VERSION, ColumnarBlock};
 
 /// A block header for a [`ColumnarBlock`](crate::cbq::ColumnarBlock)
 ///
@@ -42,7 +42,7 @@ impl BlockHeader {
     pub fn from_block(block: &ColumnarBlock) -> Self {
         Self {
             magic: *BLOCK_MAGIC,
-            version: 1,
+            version: BLOCK_VERSION,
             padding: [42; 4],
             len_z_seq_len: block.z_seq_len.len() as u64,
             len_z_header_len: block.z_header_len.len() as u64,
@@ -80,6 +80,13 @@ impl BlockHeader {
         if header.magic != *BLOCK_MAGIC {
             return Err(CbqError::InvalidBlockHeaderMagic.into());
         }
+        if header.version > BLOCK_VERSION {
+            return Err(CbqError::UnsupportedBlockVersion {
+                found: header.version,
+                supported: BLOCK_VERSION,
+            }
+            .into());
+        }
         Ok(header)
     }
 
@@ -87,5 +94,25 @@ impl BlockHeader {
         writer
             .write_all(self.as_bytes())
             .map_err(IntoBinseqError::into_binseq_error)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Error;
+
+    #[test]
+    fn test_from_bytes_rejects_newer_version() {
+        let mut header = BlockHeader::zeroed();
+        header.magic = *BLOCK_MAGIC;
+        header.version = BLOCK_VERSION;
+        assert!(BlockHeader::from_bytes(header.as_bytes()).is_ok());
+
+        header.version = BLOCK_VERSION + 1;
+        assert!(matches!(
+            BlockHeader::from_bytes(header.as_bytes()),
+            Err(Error::CbqError(CbqError::UnsupportedBlockVersion { .. }))
+        ));
     }
 }

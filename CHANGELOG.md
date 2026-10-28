@@ -13,10 +13,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - parallel readers run workers on `std::thread::scope`, so processors may borrow from the caller's scope (e.g. hold a `&AtomicUsize` instead of an `Arc<Mutex<_>>`);
   - `ParallelReader` method bounds are now `P: ParallelProcessor` (the redundant `Clone` is dropped, it was already a supertrait);
   - breaking for downstream implementors of `ParallelReader`: remove `+ 'static` from your method bounds.
+- **Public enums are now `#[non_exhaustive]`**
+  - `Error`, `HeaderError`, `ReadError`, `WriteError`, `IndexError`, `CbqError`, `FormatError`, `Policy`, `Format`, `BinseqReader`, and `BinseqWriter`;
+  - future variants (new codecs, formats, error cases) can land in minor releases;
+  - breaking for downstream exhaustive `match`es: add a `_ =>` arm.
+- `BinseqReader::Cbq` and `BinseqWriter::Cbq` now hold a `Box` (`Box<cbq::MmapReader>`, `Box<cbq::ColumnarBlockWriter<W>>`), shrinking both enums to the size of their BQ/VBQ variants.
+- **`Error::BitnucError` / `Error::BitnucEncodingError` merged into one boxed `Error::BitnucError(Box<dyn Error + Send + Sync>)`**
+  - `bitnuc` upgrades are no longer breaking changes to `binseq::Error`;
+  - `?` conversion from both `bitnuc` error types still works.
+- **`cbq::FileHeaderBuilder` matches the BQ/VBQ builder style**
+  - takes `self` by value and has `new()`;
+  - `is_paired` / `with_flags` / `with_headers` / `with_qualities` / `with_block_size` / `with_compression_level` -> `paired` / `flags` / `headers` / `qualities` / `block_size` / `compression_level`;
+  - `with_optional_block_size` / `with_optional_compression_level` removed.
+- **Compression level is `i32` throughout** (`cbq::FileHeader::compression_level`, `cbq::DEFAULT_COMPRESSION_LEVEL`, and `cbq::FileHeaderBuilder::compression_level`)
+  - the on-disk header is byte-identical: the `i32` sits in the low bytes of the former `u64` field.
+- **`encode_fastx` no longer needs a `'static` output writer**
+  - `BinseqWriterBuilder::encode_fastx<W: Write + Send + 'a>` returns `FastxEncoderBuilder<'a>`, so you can encode into e.g. a `&mut Vec<u8>` or a locked stdout handle;
+  - breaking only where `FastxEncoderBuilder` is named in a struct field or type alias (add the lifetime).
 - VBQ and CBQ parallel readers borrow the mmap and block ranges instead of cloning them per thread.
+
+### Removed
+
+- **`ParallelReader::validate_range`**: an internal helper, now a crate-private function. Implementors of `ParallelReader` that called it should inline their own bounds check.
+- **`Policy::handle` and `RNG_SEED` from the public API**
+  - writers apply the policy internally, and exposing `handle` put `rand::Rng` in binseq's public API;
+  - `rand` upgrades are no longer breaking changes to binseq.
 
 ### Fixed
 
+- `BinseqWriterBuilder::compression_level` with a negative (zstd fast mode) level was silently replaced by `0` for CBQ; it is now honored.
+- CBQ readers now reject files and blocks written by a newer format version (`CbqError::UnsupportedFileVersion` / `UnsupportedBlockVersion`) instead of silently misparsing them.
 - The BQ parallel reader panicked when a processor returned an error; it now returns the `Err` like the VBQ and CBQ readers.
 
 ## [0.10.0] - 2026-08-25
