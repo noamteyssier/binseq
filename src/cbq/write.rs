@@ -67,7 +67,7 @@ impl<W: io::Write> ColumnarBlockWriter<W> {
         // Initialize the compressor with the compression level
         self.cctx
             .set_parameter(zstd_safe::CParameter::CompressionLevel(
-                self.block.header.compression_level as i32,
+                self.block.header.compression_level,
             ))
             .map_err(|e| io::Error::other(zstd_safe::get_error_name(e)))?;
 
@@ -207,12 +207,12 @@ mod tests {
 
     /// Build a `FileHeader` for sequence-only records with the given block size.
     fn header(block_size: usize) -> FileHeader {
-        FileHeaderBuilder::default()
-            .is_paired(false)
-            .with_headers(false)
-            .with_qualities(false)
-            .with_flags(false)
-            .with_block_size(block_size)
+        FileHeaderBuilder::new()
+            .paired(false)
+            .headers(false)
+            .qualities(false)
+            .flags(false)
+            .block_size(block_size)
             .build()
     }
 

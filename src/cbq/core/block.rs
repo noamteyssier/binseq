@@ -966,22 +966,22 @@ mod tests {
     use zstd::zstd_safe;
 
     fn full_header(block_size: usize) -> FileHeader {
-        FileHeaderBuilder::default()
-            .is_paired(true)
-            .with_headers(true)
-            .with_qualities(true)
-            .with_flags(true)
-            .with_block_size(block_size)
+        FileHeaderBuilder::new()
+            .paired(true)
+            .headers(true)
+            .qualities(true)
+            .flags(true)
+            .block_size(block_size)
             .build()
     }
 
     fn unpaired_header(block_size: usize) -> FileHeader {
-        FileHeaderBuilder::default()
-            .is_paired(false)
-            .with_headers(false)
-            .with_qualities(false)
-            .with_flags(false)
-            .with_block_size(block_size)
+        FileHeaderBuilder::new()
+            .paired(false)
+            .headers(false)
+            .qualities(false)
+            .flags(false)
+            .block_size(block_size)
             .build()
     }
 
@@ -1134,12 +1134,12 @@ mod tests {
 
     #[test]
     fn test_push_headers_mismatch() {
-        let header = FileHeaderBuilder::default()
-            .is_paired(false)
-            .with_headers(true)
-            .with_qualities(false)
-            .with_flags(false)
-            .with_block_size(1 << 16)
+        let header = FileHeaderBuilder::new()
+            .paired(false)
+            .headers(true)
+            .qualities(false)
+            .flags(false)
+            .block_size(1 << 16)
             .build();
         let mut block = ColumnarBlock::new(header);
         let record = SequencingRecordBuilder::default()
@@ -1158,12 +1158,12 @@ mod tests {
 
     #[test]
     fn test_push_qualities_mismatch() {
-        let header = FileHeaderBuilder::default()
-            .is_paired(false)
-            .with_headers(false)
-            .with_qualities(true)
-            .with_flags(false)
-            .with_block_size(1 << 16)
+        let header = FileHeaderBuilder::new()
+            .paired(false)
+            .headers(false)
+            .qualities(true)
+            .flags(false)
+            .block_size(1 << 16)
             .build();
         let mut block = ColumnarBlock::new(header);
         let record = SequencingRecordBuilder::default()
@@ -1217,12 +1217,12 @@ mod tests {
 
     #[test]
     fn test_add_flag_missing() {
-        let header = FileHeaderBuilder::default()
-            .is_paired(false)
-            .with_headers(false)
-            .with_qualities(false)
-            .with_flags(true)
-            .with_block_size(1 << 16)
+        let header = FileHeaderBuilder::new()
+            .paired(false)
+            .headers(false)
+            .qualities(false)
+            .flags(true)
+            .block_size(1 << 16)
             .build();
         let mut block = ColumnarBlock::new(header);
         let record = SequencingRecordBuilder::default()
@@ -1241,12 +1241,12 @@ mod tests {
 
     #[test]
     fn test_add_headers_missing_sheader() {
-        let header = FileHeaderBuilder::default()
-            .is_paired(false)
-            .with_headers(true)
-            .with_qualities(false)
-            .with_flags(false)
-            .with_block_size(1 << 16)
+        let header = FileHeaderBuilder::new()
+            .paired(false)
+            .headers(true)
+            .qualities(false)
+            .flags(false)
+            .block_size(1 << 16)
             .build();
         let mut block = ColumnarBlock::new(header);
         let record = SequencingRecordBuilder::default()
@@ -1265,12 +1265,12 @@ mod tests {
 
     #[test]
     fn test_add_headers_missing_xheader() {
-        let header = FileHeaderBuilder::default()
-            .is_paired(true)
-            .with_headers(true)
-            .with_qualities(false)
-            .with_flags(false)
-            .with_block_size(1 << 16)
+        let header = FileHeaderBuilder::new()
+            .paired(true)
+            .headers(true)
+            .qualities(false)
+            .flags(false)
+            .block_size(1 << 16)
             .build();
         let mut block = ColumnarBlock::new(header);
         let record = SequencingRecordBuilder::default()
@@ -1290,12 +1290,12 @@ mod tests {
 
     #[test]
     fn test_add_quality_missing_squal() {
-        let header = FileHeaderBuilder::default()
-            .is_paired(false)
-            .with_headers(false)
-            .with_qualities(true)
-            .with_flags(false)
-            .with_block_size(1 << 16)
+        let header = FileHeaderBuilder::new()
+            .paired(false)
+            .headers(false)
+            .qualities(true)
+            .flags(false)
+            .block_size(1 << 16)
             .build();
         let mut block = ColumnarBlock::new(header);
         let record = SequencingRecordBuilder::default()
@@ -1314,12 +1314,12 @@ mod tests {
 
     #[test]
     fn test_add_quality_missing_xqual() {
-        let header = FileHeaderBuilder::default()
-            .is_paired(true)
-            .with_headers(false)
-            .with_qualities(true)
-            .with_flags(false)
-            .with_block_size(1 << 16)
+        let header = FileHeaderBuilder::new()
+            .paired(true)
+            .headers(false)
+            .qualities(true)
+            .flags(false)
+            .block_size(1 << 16)
             .build();
         let mut block = ColumnarBlock::new(header);
         let record = SequencingRecordBuilder::default()

@@ -3,7 +3,7 @@
 use bitnuc_deprec::BitSize;
 use rand::{SeedableRng, rngs::SmallRng};
 
-use crate::{Policy, RNG_SEED, error::Result};
+use crate::{Policy, error::Result, policy::RNG_SEED};
 
 /// Encodes nucleotide sequences into a compact multi-bit binary format.
 ///

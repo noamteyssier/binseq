@@ -6,6 +6,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 /// The main error type for the binseq library, encompassing all possible error cases
 /// that can occur during binary sequence operations.
 #[derive(thiserror::Error, Debug)]
+#[non_exhaustive]
 pub enum Error {
     /// Errors related to file and block headers
     #[error("Error processing header: {0}")]
@@ -39,13 +40,11 @@ pub enum Error {
     #[error("Error determining BINSEQ format: {0}")]
     FormatError(#[from] FormatError),
 
-    /// Errors from the deprecated bitnuc dependency for nucleotide encoding/decoding (bq/vbq)
+    /// Nucleotide encoding/decoding errors from `bitnuc`
+    ///
+    /// Boxed so that `bitnuc` upgrades are not breaking changes to this type.
     #[error("Bitnuc error: {0}")]
-    BitnucError(#[from] bitnuc_deprec::Error),
-
-    /// Errors from the bitnuc dependency for nucleotide encoding/decoding (cbq)
-    #[error("Bitnuc error: {0}")]
-    BitnucEncodingError(#[from] bitnuc::BitnucError),
+    BitnucError(Box<dyn StdError + Send + Sync>),
 
     /// Conversion errors from anyhow errors
     #[cfg(feature = "anyhow")]
@@ -57,8 +56,21 @@ pub enum Error {
     GenericError(#[from] Box<dyn StdError + Send + Sync>),
 }
 
+impl From<bitnuc_deprec::Error> for Error {
+    fn from(err: bitnuc_deprec::Error) -> Self {
+        Self::BitnucError(Box::new(err))
+    }
+}
+
+impl From<bitnuc::BitnucError> for Error {
+    fn from(err: bitnuc::BitnucError) -> Self {
+        Self::BitnucError(Box::new(err))
+    }
+}
+
 /// Errors specific to processing and validating binary sequence headers
 #[derive(thiserror::Error, Debug)]
+#[non_exhaustive]
 pub enum HeaderError {
     /// The magic number in the header does not match the expected value
     #[error("Invalid magic number: {0}")]
@@ -87,6 +99,7 @@ pub enum HeaderError {
 
 /// Errors that can occur while reading binary sequence data
 #[derive(thiserror::Error, Debug)]
+#[non_exhaustive]
 pub enum ReadError {
     /// The file being read is not a regular file (e.g., it might be a directory or special file)
     #[error("File is not regular")]
@@ -135,6 +148,7 @@ pub enum ReadError {
 
 /// Errors that can occur while writing binary sequence data
 #[derive(thiserror::Error, Debug)]
+#[non_exhaustive]
 pub enum WriteError {
     /// Error between configuration of writer and incoming sequencing record
     #[error(
@@ -204,6 +218,7 @@ pub enum WriteError {
 
 /// Errors related to VBQ file indexing
 #[derive(thiserror::Error, Debug)]
+#[non_exhaustive]
 pub enum IndexError {
     /// The magic number in the index doesn't match the expected value
     #[error("Invalid magic number: {0}")]
@@ -215,6 +230,7 @@ pub enum IndexError {
 }
 
 #[derive(thiserror::Error, Debug)]
+#[non_exhaustive]
 pub enum CbqError {
     #[error(
         "Record size ({record_size}) exceeds maximum block size ({max_block_size}) - Try increasing block size."
@@ -246,6 +262,14 @@ pub enum CbqError {
     #[error("Invalid file header MAGIC found")]
     InvalidFileHeaderMagic,
 
+    /// The file was written by a newer CBQ format version than this library supports
+    #[error("Unsupported CBQ file version {found} (this library supports up to {supported})")]
+    UnsupportedFileVersion { found: u8, supported: u8 },
+
+    /// A block was written by a newer CBQ format version than this library supports
+    #[error("Unsupported CBQ block version {found} (this library supports up to {supported})")]
+    UnsupportedBlockVersion { found: u8, supported: u8 },
+
     #[error("Invalid index header MAGIC found")]
     InvalidIndexHeaderMagic,
 
@@ -257,6 +281,7 @@ pub enum CbqError {
 }
 
 #[derive(thiserror::Error, Debug)]
+#[non_exhaustive]
 pub enum FormatError {
     /// The BINSEQ format could not be determined from a file's magic bytes
     #[error("Unable to determine BINSEQ format from magic bytes in file: {0}")]

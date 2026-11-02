@@ -65,6 +65,7 @@ use crate::{BitSize, Policy, Result, SequencingRecord, bq, cbq, error::WriteErro
 
 /// Output format for BINSEQ files
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub enum Format {
     /// BQ format - fixed length records, no quality scores
     Bq,
@@ -298,7 +299,7 @@ impl BinseqWriterBuilder {
             headers: header.has_headers(),
             paired: header.is_paired(),
             block_size: Some(header.block_size as usize),
-            compression_level: Some(header.compression_level as i32),
+            compression_level: Some(header.compression_level),
             ..Self::new(Format::Cbq)
         }
     }
@@ -334,10 +335,10 @@ impl BinseqWriterBuilder {
     /// ```
     #[cfg(feature = "paraseq")]
     #[must_use]
-    pub fn encode_fastx<W: Write + Send + 'static>(
+    pub fn encode_fastx<'a, W: Write + Send + 'a>(
         self,
         output: W,
-    ) -> crate::utils::FastxEncoderBuilder {
+    ) -> crate::utils::FastxEncoderBuilder<'a> {
         crate::utils::FastxEncoderBuilder::new(self, Box::new(output))
     }
 
@@ -417,17 +418,18 @@ impl BinseqWriterBuilder {
     }
 
     fn build_cbq<W: Write>(self, writer: W) -> Result<BinseqWriter<W>> {
-        let header = cbq::FileHeaderBuilder::default()
-            .is_paired(self.paired)
-            .with_qualities(self.quality)
-            .with_headers(self.headers)
-            .with_flags(self.flags)
-            .with_optional_block_size(self.block_size)
-            .with_optional_compression_level(
-                self.compression_level
-                    .map(|level| usize::try_from(level).unwrap_or(0)),
-            )
-            .build();
+        let mut header_builder = cbq::FileHeaderBuilder::new()
+            .paired(self.paired)
+            .qualities(self.quality)
+            .headers(self.headers)
+            .flags(self.flags);
+        if let Some(size) = self.block_size {
+            header_builder = header_builder.block_size(size);
+        }
+        if let Some(level) = self.compression_level {
+            header_builder = header_builder.compression_level(level);
+        }
+        let header = header_builder.build();
 
         let inner = if self.headless {
             cbq::ColumnarBlockWriter::new_headless(writer, header)?
@@ -435,25 +437,21 @@ impl BinseqWriterBuilder {
             cbq::ColumnarBlockWriter::new(writer, header)?
         };
 
-        Ok(BinseqWriter::Cbq(inner))
+        Ok(BinseqWriter::Cbq(Box::new(inner)))
     }
 }
 
 /// Unified writer for BINSEQ formats
 ///
 /// Wraps the three format-specific writers behind one interface.
-// `cbq::ColumnarBlockWriter` is intrinsically larger than the other variants (it holds a
-// reusable `ColumnarBlock` encode buffer). Boxing it would shrink this enum but is a breaking
-// change to the variant's public field type, so it's left as-is rather than churn downstream
-// consumers.
-#[allow(clippy::large_enum_variant)]
+#[non_exhaustive]
 pub enum BinseqWriter<W: Write> {
     /// BQ format writer
     Bq(bq::Writer<W>),
     /// VBQ format writer
     Vbq(vbq::Writer<W>),
     /// CBQ format writer
-    Cbq(cbq::ColumnarBlockWriter<W>),
+    Cbq(Box<cbq::ColumnarBlockWriter<W>>),
 }
 
 impl<W: Write> BinseqWriter<W> {
@@ -587,7 +585,7 @@ impl<W: Write> BinseqWriter<W> {
             }
             Self::Cbq(w) => {
                 let inner = cbq::ColumnarBlockWriter::new_headless(Vec::new(), w.header())?;
-                Ok(BinseqWriter::Cbq(inner))
+                Ok(BinseqWriter::Cbq(Box::new(inner)))
             }
         }
     }
@@ -696,6 +694,18 @@ mod tests {
         assert!(!writer.is_paired());
         assert!(writer.has_quality());
         assert!(writer.has_headers());
+        Ok(())
+    }
+
+    #[test]
+    fn test_build_cbq_writer_negative_compression_level() -> Result<()> {
+        let writer = BinseqWriterBuilder::new(Format::Cbq)
+            .compression_level(-3)
+            .build(Cursor::new(Vec::new()))?;
+        let BinseqWriter::Cbq(writer) = writer else {
+            unreachable!()
+        };
+        assert_eq!(writer.header().compression_level, -3);
         Ok(())
     }
 

@@ -31,21 +31,18 @@ fn sniff_format<P: AsRef<Path>>(path: P) -> Result<Format> {
 /// distinction between BINSEQ readers is not important.
 ///
 /// For more specialized workflows see [`bq::MmapReader`], [`vbq::MmapReader`], and [`cbq::MmapReader`].
-// `cbq::MmapReader` is intrinsically larger than the other variants (it holds a reusable
-// `ColumnarBlock` decode buffer). Boxing it would shrink this enum but is a breaking change to
-// the variant's public field type, so it's left as-is rather than churn downstream consumers.
-#[allow(clippy::large_enum_variant)]
+#[non_exhaustive]
 pub enum BinseqReader {
     Bq(bq::MmapReader),
     Vbq(vbq::MmapReader),
-    Cbq(cbq::MmapReader),
+    Cbq(Box<cbq::MmapReader>),
 }
 impl BinseqReader {
     pub fn new<P: AsRef<Path>>(path: P) -> Result<Self> {
         match sniff_format(&path)? {
             Format::Bq => Ok(Self::Bq(bq::MmapReader::new(path)?)),
             Format::Vbq => Ok(Self::Vbq(vbq::MmapReader::new(path)?)),
-            Format::Cbq => Ok(Self::Cbq(cbq::MmapReader::new(path)?)),
+            Format::Cbq => Ok(Self::Cbq(Box::new(cbq::MmapReader::new(path)?))),
         }
     }
 
@@ -90,7 +87,7 @@ impl BinseqReader {
     ///
     /// Inherent convenience for [`ParallelReader::process_parallel_range`], callable
     /// without importing the trait.
-    pub fn process_parallel_range<P: ParallelProcessor + Clone + 'static>(
+    pub fn process_parallel_range<P: ParallelProcessor>(
         self,
         processor: P,
         num_threads: usize,
@@ -100,7 +97,7 @@ impl BinseqReader {
     }
 }
 impl ParallelReader for BinseqReader {
-    fn process_parallel<P: ParallelProcessor + Clone + 'static>(
+    fn process_parallel<P: ParallelProcessor>(
         self,
         processor: P,
         num_threads: usize,
@@ -109,7 +106,7 @@ impl ParallelReader for BinseqReader {
         self.process_parallel_range(processor, num_threads, 0..num_records)
     }
 
-    fn process_parallel_range<P: ParallelProcessor + Clone + 'static>(
+    fn process_parallel_range<P: ParallelProcessor>(
         self,
         processor: P,
         num_threads: usize,
@@ -120,6 +117,31 @@ impl ParallelReader for BinseqReader {
             Self::Vbq(reader) => reader.process_parallel_range(processor, num_threads, range),
             Self::Cbq(reader) => reader.process_parallel_range(processor, num_threads, range),
         }
+    }
+}
+
+/// Validate that a record range is well-formed and within the file's bounds
+pub(crate) fn validate_range(total_records: usize, range: &Range<usize>) -> Result<()> {
+    if range.start >= total_records {
+        Err(ReadError::OutOfRange {
+            requested_index: range.start,
+            max_index: total_records,
+        }
+        .into())
+    } else if range.end > total_records {
+        Err(ReadError::OutOfRange {
+            requested_index: range.end,
+            max_index: total_records,
+        }
+        .into())
+    } else if range.start > range.end {
+        Err(ReadError::InvalidRange {
+            start: range.start,
+            end: range.end,
+        }
+        .into())
+    } else {
+        Ok(())
     }
 }
 
@@ -140,44 +162,16 @@ pub(crate) fn clamp_threads(num_threads: usize) -> usize {
 /// This is implemented by the **reader** not by the **processor**.
 /// For the **processor**, see the [`ParallelProcessor`] trait.
 pub trait ParallelReader {
-    fn process_parallel<P: ParallelProcessor + Clone + 'static>(
-        self,
-        processor: P,
-        num_threads: usize,
-    ) -> Result<()>;
+    fn process_parallel<P: ParallelProcessor>(self, processor: P, num_threads: usize)
+    -> Result<()>;
 
     /// Process a range of record indices in parallel, distributed across `num_threads`
-    fn process_parallel_range<P: ParallelProcessor + Clone + 'static>(
+    fn process_parallel_range<P: ParallelProcessor>(
         self,
         processor: P,
         num_threads: usize,
         range: Range<usize>,
     ) -> Result<()>;
-
-    /// Validate that a record range is well-formed and within the file's bounds
-    fn validate_range(&self, total_records: usize, range: &Range<usize>) -> Result<()> {
-        if range.start >= total_records {
-            Err(ReadError::OutOfRange {
-                requested_index: range.start,
-                max_index: total_records,
-            }
-            .into())
-        } else if range.end > total_records {
-            Err(ReadError::OutOfRange {
-                requested_index: range.end,
-                max_index: total_records,
-            }
-            .into())
-        } else if range.start > range.end {
-            Err(ReadError::InvalidRange {
-                start: range.start,
-                end: range.end,
-            }
-            .into())
-        } else {
-            Ok(())
-        }
-    }
 }
 
 /// Trait for types that can process records in parallel.
@@ -216,6 +210,7 @@ pub trait ParallelProcessor: Send + Clone {
 #[cfg(test)]
 mod testing {
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     use parking_lot::Mutex;
 
@@ -270,6 +265,48 @@ mod testing {
             let processor = TestProcessor::default();
             assert!(reader.process_parallel(processor.clone(), 0).is_ok());
             assert_eq!(*processor.n_records.lock(), num_records);
+        }
+    }
+
+    /// A processor that borrows stack state, so it is not `'static`.
+    #[derive(Clone)]
+    struct BorrowingProcessor<'a> {
+        n_records: &'a AtomicUsize,
+    }
+    impl ParallelProcessor for BorrowingProcessor<'_> {
+        fn process_record<R: BinseqRecord>(&mut self, _record: R) -> Result<()> {
+            self.n_records.fetch_add(1, Ordering::Relaxed);
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn test_parallel_processor_non_static() {
+        for ext in ["bq", "vbq", "cbq"] {
+            let reader = BinseqReader::new(format!("./data/subset.{ext}")).unwrap();
+            let num_records = reader.num_records().unwrap();
+            let n_records = AtomicUsize::new(0);
+            let processor = BorrowingProcessor {
+                n_records: &n_records,
+            };
+            reader.process_parallel(processor, 0).unwrap();
+            assert_eq!(n_records.into_inner(), num_records);
+        }
+    }
+
+    #[derive(Clone)]
+    struct FailingProcessor;
+    impl ParallelProcessor for FailingProcessor {
+        fn process_record<R: BinseqRecord>(&mut self, _record: R) -> Result<()> {
+            Err(std::io::Error::other("processor failure").into())
+        }
+    }
+
+    #[test]
+    fn test_parallel_processor_error_propagates() {
+        for ext in ["bq", "vbq", "cbq"] {
+            let reader = BinseqReader::new(format!("./data/subset.{ext}")).unwrap();
+            assert!(reader.process_parallel(FailingProcessor, 0).is_err());
         }
     }
 

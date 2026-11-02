@@ -49,6 +49,7 @@
 //! ```
 
 #![allow(clippy::module_inception)]
+#![cfg_attr(test, allow(clippy::assert_is_empty))]
 
 /// CBQ - columnar variable-length records, optional quality scores and headers
 pub mod cbq;
@@ -85,7 +86,7 @@ pub mod utils;
 
 pub use error::{Error, IntoBinseqError, Result};
 pub use parallel::{BinseqReader, ParallelProcessor, ParallelReader};
-pub use policy::{Policy, RNG_SEED};
+pub use policy::Policy;
 pub use record::{BinseqRecord, SequencingRecord, SequencingRecordBuilder};
 pub use write::{BinseqWriter, BinseqWriterBuilder};
 

@@ -10,6 +10,6 @@ pub use header::{FileHeader, FileHeaderBuilder};
 pub use index::{BlockRange, Index, IndexFooter, IndexHeader};
 
 use super::{
-    BLOCK_MAGIC, DEFAULT_BLOCK_SIZE, DEFAULT_COMPRESSION_LEVEL, FILE_MAGIC, FILE_VERSION,
-    INDEX_MAGIC,
+    BLOCK_MAGIC, BLOCK_VERSION, DEFAULT_BLOCK_SIZE, DEFAULT_COMPRESSION_LEVEL, FILE_MAGIC,
+    FILE_VERSION, INDEX_MAGIC,
 };
